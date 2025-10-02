@@ -1,1048 +1,824 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Platform,
-  Alert,
-  Modal,
-} from 'react-native';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, AppState, AppStateStatus } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-// Replace lucide-react-native with Expo vector icons
-import { Map as MapIcon, Locate, Footprints, Target, TrendingUp, Zap, Save, Trash, Play, Pause, StopCircle } from 'lucide-react-native';
+import { Accelerometer } from 'expo-sensors';
 import { useWalking } from '@/contexts/WalkingContext';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { WebView } from 'react-native-webview';
-import { Pedometer } from 'expo-sensors';
+import { useAuth } from '@/contexts/AuthContext';
+import { ActivityMetrics } from '@/components/ActivityMetrics';
+import { PerformanceMonitor, withPerformanceTracking } from '@/utils/performance';
+import { DataCleanupManager } from '@/utils/dataCleanup';
 
+// Custom hooks for sensor management
+const useLocationTracking = (isActive: boolean, onLocationUpdate: (location: Location.LocationObject) => void) => {
+  const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
+  const lastLocationRef = useRef<Location.LocationObject | null>(null);
+  const lastLocationTimeRef = useRef<number>(0);
+  const locationBufferRef = useRef<Location.LocationObject[]>([]);
+  const cleanupIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-
-interface LocationCoordinate {
-  latitude: number;
-  longitude: number;
-}
-
-// Simple Map Placeholder Component
-const MapPlaceholder = ({ 
-  currentLocation, 
-  routeCoordinates 
-}: { 
-  currentLocation: LocationCoordinate | null;
-  routeCoordinates: LocationCoordinate[];
-}) => {
-  return (
-    <View style={styles.mapPlaceholder}>
-      <View style={styles.mapIcon}>
-        <MapIcon color="#4CAF50" size={48} />
-      </View>
-      <Text style={styles.mapTitle}>Walking Map</Text>
-      <Text style={styles.mapSubtitle}>
-        {Platform.OS === 'web' ? 'Map view available on mobile' : 'GPS tracking active'}
-      </Text>
-      
-      {currentLocation && (
-        <View style={styles.locationCard}>
-          <View style={styles.locationHeader}>
-            <Locate color="#4CAF50" size={20} />
-            <Text style={styles.locationTitle}>Current Location</Text>
-          </View>
-          <Text style={styles.locationCoords}>
-            {currentLocation.latitude.toFixed(4)}, {currentLocation.longitude.toFixed(4)}
-          </Text>
-          {routeCoordinates.length > 0 && (
-            <Text style={styles.routeInfo}>
-              📍 {routeCoordinates.length} points tracked
-            </Text>
-          )}
-        </View>
-      )}
-    </View>
-  );
-};
-
-export default function WalkScreen() {
-  const { 
-    isWalking, 
-    currentWalk, 
-    startWalk, 
-    pauseWalk, 
-    stopWalk,
-    resumeWalk,
-    updateDistance,
-    updateSteps,
-    // New Strava-like tracking from context
-    routePoints,
-    splits,
-    addRoutePoint,
-    resetRoute,
-    saveCurrentWalk,
-  } = useWalking();
-  const { lastCompletedWalk } = useWalking();
-  
-  const [elapsedTime, setElapsedTime] = useState(0);
-  const [currentLocation, setCurrentLocation] = useState<LocationCoordinate | null>(null);
-  // Remove local routeCoordinates in favor of context routePoints
-  // const [routeCoordinates, setRouteCoordinates] = useState<LocationCoordinate[]>([]);
-
-  const [locationPermission, setLocationPermission] = useState<boolean>(false);
-  const [currentPace, setCurrentPace] = useState<string>('0:00');
-  
-
-  const locationSubscription = useRef<Location.LocationSubscription | null>(null);
-  const stepSubscriptionRef = useRef<any | null>(null);
-  const lastStepCountRef = useRef<number>(0);
-  const pedometerActiveRef = useRef<boolean>(false);
-  const AVERAGE_STEP_LENGTH_M = 0.78; // fallback estimation when pedometer not available
-  const mapRef = useRef<any | null>(null);
-  const insets = useSafeAreaInsets();
-  const [showSummaryModal, setShowSummaryModal] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const mapInitializedRef = useRef<boolean>(false);
-  const lastMapUpdateRef = useRef<number>(0);
-
-  // Auto-open summary modal when a walk ends and we have a snapshot
-  useEffect(() => {
-    if (!isWalking && lastCompletedWalk) {
-      setShowSummaryModal(true);
+  // Periodic cleanup to prevent memory accumulation
+  const performLocationCleanup = useCallback(() => {
+    const now = Date.now();
+    
+    // Clean location buffer every 60 seconds
+    if (locationBufferRef.current.length > 20) {
+      locationBufferRef.current = locationBufferRef.current.slice(-10);
     }
-  }, [isWalking, lastCompletedWalk]);
-
-  // Derived distance from routePoints to align stats with map movement
-  const routeDistanceKm = useMemo(() => {
-    if (routePoints.length < 2) return 0;
-    let metersTotal = 0;
-    for (let i = 1; i < routePoints.length; i++) {
-      metersTotal += haversineDistance(
-        { latitude: routePoints[i - 1].lat, longitude: routePoints[i - 1].lon },
-        { latitude: routePoints[i].lat, longitude: routePoints[i].lon }
-      );
+    
+    // Reset last location time if too old (prevents stale data)
+    if (now - lastLocationTimeRef.current > 300000) { // 5 minutes
+      lastLocationTimeRef.current = 0;
     }
-    return metersTotal / 1000;
-  }, [routePoints]);
-
-  // Request location permissions on mount
-  useEffect(() => {
-    requestLocationPermission();
-    return () => {
-      if (locationSubscription.current) {
-        locationSubscription.current.remove();
-      }
-    };
   }, []);
 
-  // Timer effect
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | undefined;
+  const handleLocationUpdate = useCallback((location: Location.LocationObject) => {
+    const now = Date.now();
     
-    if (isWalking && currentWalk && !currentWalk.isPaused) {
-      interval = setInterval(() => {
-        const now = Date.now();
-        const elapsed = Math.floor((now - currentWalk.startTime) / 1000);
-        setElapsedTime(elapsed);
-        
-        // Calculate pace (minutes per km) based on map-aligned distance
-        if (routeDistanceKm > 0) {
-          const paceMinutes = elapsed / 60 / routeDistanceKm;
-          const minutes = Math.floor(paceMinutes);
-          const seconds = Math.floor((paceMinutes - minutes) * 60);
-          setCurrentPace(`${minutes}:${seconds.toString().padStart(2, '0')}`);
-        } else {
-          setCurrentPace('0:00');
-        }
-      }, 1000);
+    // Throttle location updates to prevent excessive processing
+    if (now - lastLocationTimeRef.current < 2000) { // Minimum 2 seconds between updates
+      return;
+    }
+    
+    // Add to buffer with size limit
+    locationBufferRef.current.push(location);
+    if (locationBufferRef.current.length > 10) {
+      locationBufferRef.current.shift();
+    }
+    
+    lastLocationRef.current = location;
+    lastLocationTimeRef.current = now;
+    onLocationUpdate(location);
+  }, [onLocationUpdate]);
+
+  const startLocationTracking = useCallback(async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Location permission is required for tracking your walk.');
+        return false;
+      }
+
+      const subscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.Balanced, // Balanced accuracy for better battery life
+          timeInterval: 3000, // Update every 3 seconds (reduced frequency)
+          distanceInterval: 2, // Update every 2 meters
+        },
+        handleLocationUpdate
+      );
+
+      locationSubscriptionRef.current = subscription;
+      
+      // Set up periodic cleanup
+      cleanupIntervalRef.current = setInterval(performLocationCleanup, 60000) as any; // Every minute
+      
+      return true;
+    } catch (error) {
+      console.error('Failed to start location tracking:', error);
+      return false;
+    }
+  }, [handleLocationUpdate, performLocationCleanup]);
+
+  const stopLocationTracking = useCallback(() => {
+    // Clean up location subscription
+    if (locationSubscriptionRef.current) {
+      locationSubscriptionRef.current.remove();
+      locationSubscriptionRef.current = null;
     }
 
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isWalking, currentWalk, routeDistanceKm]);
+    // Clear cleanup interval
+    if (cleanupIntervalRef.current) {
+      clearInterval(cleanupIntervalRef.current);
+      cleanupIntervalRef.current = null;
+    }
 
-  // Pedometer subscription to update steps
+    // Reset tracking data
+    lastLocationTimeRef.current = 0;
+    locationBufferRef.current = [];
+  }, []);
+
   useEffect(() => {
-    const subscribeSteps = async () => {
-      const isAvailable = await Pedometer.isAvailableAsync();
-      if (!isAvailable) {
-        pedometerActiveRef.current = false;
-        console.warn('Pedometer not available on this device.');
-        return;
-      }
-
-      // Request runtime permission for step counting (Android 10+ and iOS Motion & Fitness)
-      try {
-        const perm = await (Pedometer as any).requestPermissionAsync?.();
-        if (perm && perm.status && perm.status !== 'granted') {
-          pedometerActiveRef.current = false;
-          console.warn('Pedometer permission not granted:', perm.status);
-          Alert.alert('Motion Permission', 'Enable Motion/Fitness permission to count steps.');
-          return;
-        }
-      } catch (err) {
-        // Some platforms may not require permission; continue silently
-      }
-
-      pedometerActiveRef.current = true;
-      lastStepCountRef.current = 0;
-      stepSubscriptionRef.current = Pedometer.watchStepCount((result) => {
-        if (isWalking && currentWalk && !currentWalk.isPaused) {
-          const delta = Math.max(0, result.steps - lastStepCountRef.current);
-          if (delta > 0) {
-            updateSteps(delta);
-            lastStepCountRef.current = result.steps;
-          }
-        }
-      });
-    };
-
-    subscribeSteps();
-    return () => {
-      if (stepSubscriptionRef.current) {
-        stepSubscriptionRef.current.remove();
-        stepSubscriptionRef.current = null;
-      }
-      pedometerActiveRef.current = false;
-    };
-  }, [isWalking, currentWalk]);
-
-  // Location tracking effect
-  useEffect(() => {
-    if (isWalking && locationPermission && !currentWalk?.isPaused) {
+    if (isActive) {
       startLocationTracking();
     } else {
       stopLocationTracking();
     }
-  }, [isWalking, locationPermission, currentWalk?.isPaused]);
 
-  // Build Leaflet HTML once; subsequent updates injected via JS APIs
-  const leafletHtml = useMemo(() => {
-    return buildLeafletHtmlStatic();
+    // Cleanup on unmount
+    return () => {
+      stopLocationTracking();
+    };
+  }, [isActive, startLocationTracking, stopLocationTracking]);
+
+  return { lastLocation: lastLocationRef.current };
+};
+
+const useStepTracking = (isActive: boolean, onStepDetected: () => void) => {
+  const accelerometerSubscriptionRef = useRef<{ remove: () => void } | null>(null);
+  const stepDataRef = useRef({
+    lastMagnitude: 0,
+    baselineThreshold: 1.15,
+    adaptiveThreshold: 1.15,
+    lastStepTime: 0,
+    stepBuffer: [] as number[],
+    magnitudeHistory: [] as number[],
+    peakBuffer: [] as number[],
+    stepCadence: 0,
+    lastPeakTime: 0,
+    consecutiveSteps: 0,
+    calibrationSamples: 0,
+    isCalibrated: false,
+    lastCleanupTime: Date.now(), // Add cleanup tracking
+  });
+
+  // Periodic cleanup to prevent memory leaks
+  const performPeriodicCleanup = useCallback(() => {
+    const now = Date.now();
+    const stepData = stepDataRef.current;
+    
+    // Clean up every 30 seconds
+    if (now - stepData.lastCleanupTime > 30000) {
+      // Limit buffer sizes to prevent memory accumulation
+      if (stepData.magnitudeHistory.length > 100) {
+        stepData.magnitudeHistory = stepData.magnitudeHistory.slice(-50);
+      }
+      if (stepData.stepBuffer.length > 30) {
+        stepData.stepBuffer = stepData.stepBuffer.slice(-15);
+      }
+      if (stepData.peakBuffer.length > 20) {
+        stepData.peakBuffer = stepData.peakBuffer.slice(-10);
+      }
+      
+      stepData.lastCleanupTime = now;
+    }
   }, []);
 
-  // Request foreground permission and set initial location
-  const requestLocationPermission = async () => {
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        setLocationPermission(true);
-        // Enable network provider for better real-time accuracy (Android only, if available)
-        if (Platform.OS === 'android' && (Location as any).enableNetworkProviderAsync) {
-          try { await (Location as any).enableNetworkProviderAsync(); } catch {}
-        }
-        // Get initial location
-        const location = await Location.getCurrentPositionAsync({
-          accuracy: Platform.OS === 'ios' ? Location.Accuracy.BestForNavigation : Location.Accuracy.Highest,
-          mayShowUserSettingsDialog: true,
-        });
-        const coordinate = {
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-        };
-        setCurrentLocation(coordinate);
-      } else {
-        Alert.alert(
-          'Location Permission',
-          'Location access is required to track your walking route.',
-          [{ text: 'OK' }]
-        );
-      }
-    } catch (error) {
-      console.error('Error requesting location permission:', error);
+  const processAccelerometerData = useCallback((data: { x: number; y: number; z: number }) => {
+    const magnitude = Math.sqrt(data.x * data.x + data.y * data.y + data.z * data.z);
+    const now = Date.now();
+    const stepData = stepDataRef.current;
+
+    // Perform periodic cleanup to prevent memory leaks
+    performPeriodicCleanup();
+
+    // Add to magnitude history with size limit
+    stepData.magnitudeHistory.push(magnitude);
+    if (stepData.magnitudeHistory.length > 50) {
+      stepData.magnitudeHistory.shift();
     }
-  };
 
-  const startLocationTracking = async () => {
-    try {
-      locationSubscription.current = await Location.watchPositionAsync(
-        {
-          accuracy: Platform.OS === 'ios' ? Location.Accuracy.BestForNavigation : Location.Accuracy.Highest,
-          timeInterval: 1000, // Update every 1 second
-          distanceInterval: 0.75, // finer route updates, filtered below
-        },
-        (location) => {
-          const coordinate = {
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-          };
-
-          setCurrentLocation(coordinate);
-
-          // Compute incremental distance from last point to current
-          const last = routePoints[routePoints.length - 1];
-          const nowTs = Date.now();
-          if (last) {
-            const meters = haversineDistance({ latitude: last.lat, longitude: last.lon }, coordinate);
-            const dtSec = Math.max(0.1, (nowTs - (last.timestamp || nowTs)) / 1000);
-            const speed = meters / dtSec; // m/s
-            // Filter: reject tiny jitter and unrealistic jumps (> 2.5 m/s typical fast walk)
-            if (meters >= 0.6 && speed <= 2.5) {
-              updateDistance(meters);
-
-              // Fallback step estimation if pedometer is not active/available
-              if (!pedometerActiveRef.current && isWalking && currentWalk && !currentWalk.isPaused) {
-                const estimatedSteps = Math.round(meters / AVERAGE_STEP_LENGTH_M);
-                if (estimatedSteps > 0) {
-                  updateSteps(estimatedSteps);
-                }
-              }
-
-              const point = { lat: coordinate.latitude, lon: coordinate.longitude, timestamp: nowTs };
-              addRoutePoint(point);
-
-              // Push incremental updates to WebView with throttle
-              if (mapInitializedRef.current && Date.now() - lastMapUpdateRef.current >= 500) {
-                const js = `
-                  try {
-                    if (window.addPoint) { window.addPoint([${coordinate.latitude}, ${coordinate.longitude}]); }
-                    if (window.updateLocation) { window.updateLocation([${coordinate.latitude}, ${coordinate.longitude}]); }
-                  } catch (e) {}
-                  true;
-                `;
-                mapRef.current?.injectJavaScript(js);
-                lastMapUpdateRef.current = Date.now();
-              }
-            }
-          } else {
-            // First point
-            const point = { lat: coordinate.latitude, lon: coordinate.longitude, timestamp: nowTs };
-            addRoutePoint(point);
-            if (mapInitializedRef.current) {
-              const js = `
-                try {
-                  if (window.setRoutePoints) { window.setRoutePoints([[${coordinate.latitude}, ${coordinate.longitude}]]); }
-                  if (window.updateLocation) { window.updateLocation([${coordinate.latitude}, ${coordinate.longitude}]); }
-                } catch (e) {}
-                true;
-              `;
-              mapRef.current?.injectJavaScript(js);
-            }
-          }
-        }
-      );
-    } catch (error) {
-      console.error('Error starting location tracking:', error);
+    // Add to buffer for smoothing with size limit
+    stepData.stepBuffer.push(magnitude);
+    if (stepData.stepBuffer.length > 15) {
+      stepData.stepBuffer.shift();
     }
-  };
 
-  const stopLocationTracking = () => {
-    if (locationSubscription.current) {
-      locationSubscription.current.remove();
-      locationSubscription.current = null;
-    }
-  };
-
-  const formatTime = (seconds: number) => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
+    // Calculate smoothed magnitude with weighted average
+    const weights = [0.1, 0.15, 0.2, 0.25, 0.3];
+    let smoothedMagnitude = 0;
+    let totalWeight = 0;
     
-    if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    for (let i = 0; i < Math.min(stepData.stepBuffer.length, weights.length); i++) {
+      const weight = weights[i];
+      const value = stepData.stepBuffer[stepData.stepBuffer.length - 1 - i];
+      smoothedMagnitude += value * weight;
+      totalWeight += weight;
     }
-    return `${minutes}:${secs.toString().padStart(2, '0')}`;
-  };
+    smoothedMagnitude = totalWeight > 0 ? smoothedMagnitude / totalWeight : magnitude;
 
-  const formatPaceFrom = (durationSec: number, distanceKm: number) => {
-    if (!distanceKm || distanceKm <= 0) return '0:00';
-    const paceMin = (durationSec / 60) / distanceKm;
-    const min = Math.floor(paceMin);
-    const sec = Math.floor((paceMin - min) * 60);
-    return `${min}:${sec.toString().padStart(2, '0')}`;
-  };
+    // Dynamic threshold calibration (only when needed)
+    if (!stepData.isCalibrated && stepData.magnitudeHistory.length >= 30) {
+      const baseline = stepData.magnitudeHistory.reduce((sum, val) => sum + val, 0) / stepData.magnitudeHistory.length;
+      const variance = stepData.magnitudeHistory.reduce((sum, val) => sum + Math.pow(val - baseline, 2), 0) / stepData.magnitudeHistory.length;
+      const stdDev = Math.sqrt(variance);
+      
+      stepData.adaptiveThreshold = Math.max(1.05, baseline + (stdDev * 1.5));
+      stepData.baselineThreshold = stepData.adaptiveThreshold;
+      stepData.isCalibrated = true;
+    }
 
-  const handleStartWalk = () => {
-    if (!locationPermission) {
-      Alert.alert(
-        'Location Required',
-        'Please enable location access to start tracking your walk.',
-        [{ text: 'OK' }]
-      );
+    // Enhanced peak detection with multiple criteria
+    const isAboveThreshold = smoothedMagnitude > stepData.adaptiveThreshold;
+    const isLocalPeak = smoothedMagnitude > stepData.lastMagnitude;
+    const timeSinceLastStep = now - stepData.lastStepTime;
+    const timeSinceLastPeak = now - stepData.lastPeakTime;
+    
+    // Dynamic step interval based on cadence
+    const minStepInterval = Math.max(250, Math.min(800, 60000 / Math.max(stepData.stepCadence * 2, 120)));
+    const maxStepInterval = 1200;
+
+    // Peak validation with improved criteria
+    if (isAboveThreshold && isLocalPeak && timeSinceLastStep > minStepInterval) {
+      const magnitudeDelta = smoothedMagnitude - stepData.lastMagnitude;
+      const isSignificantPeak = magnitudeDelta > 0.08;
+      
+      const currentCadence = timeSinceLastStep > 0 ? 60000 / timeSinceLastStep : 0;
+      const isRealisticCadence = currentCadence >= 50 && currentCadence <= 200;
+      
+      if (isSignificantPeak && (isRealisticCadence || stepData.consecutiveSteps < 3)) {
+        stepData.lastStepTime = now;
+        stepData.lastPeakTime = now;
+        stepData.consecutiveSteps++;
+        
+        // Update cadence with exponential smoothing
+        if (stepData.stepCadence === 0) {
+          stepData.stepCadence = currentCadence;
+        } else {
+          stepData.stepCadence = stepData.stepCadence * 0.8 + currentCadence * 0.2;
+        }
+        
+        // Adaptive threshold adjustment
+        if (stepData.consecutiveSteps > 5) {
+          stepData.adaptiveThreshold = stepData.baselineThreshold * (0.95 + Math.random() * 0.1);
+        }
+        
+        onStepDetected();
+      }
+    }
+
+    // Reset consecutive steps if too much time has passed
+    if (timeSinceLastStep > maxStepInterval) {
+      stepData.consecutiveSteps = 0;
+      stepData.adaptiveThreshold = stepData.baselineThreshold;
+    }
+
+    stepData.lastMagnitude = smoothedMagnitude;
+  }, [onStepDetected, performPeriodicCleanup]);
+
+  const startStepTracking = useCallback(() => {
+    Accelerometer.setUpdateInterval(100); // Reduce frequency to 10Hz for better performance
+    const subscription = Accelerometer.addListener(processAccelerometerData);
+    accelerometerSubscriptionRef.current = subscription;
+  }, [processAccelerometerData]);
+
+  const stopStepTracking = useCallback(() => {
+    if (accelerometerSubscriptionRef.current) {
+      accelerometerSubscriptionRef.current.remove();
+      accelerometerSubscriptionRef.current = null;
+    }
+    // Complete cleanup when stopping
+    const stepData = stepDataRef.current;
+    stepData.isCalibrated = false;
+    stepData.calibrationSamples = 0;
+    stepData.magnitudeHistory = [];
+    stepData.stepBuffer = [];
+    stepData.peakBuffer = [];
+    stepData.lastCleanupTime = Date.now();
+  }, []);
+
+  useEffect(() => {
+    if (isActive) {
+      startStepTracking();
+    } else {
+      stopStepTracking();
+    }
+
+    // Cleanup on unmount
+    return () => {
+      stopStepTracking();
+    };
+  }, [isActive, startStepTracking, stopStepTracking]);
+};
+
+const useDistanceCalculation = () => {
+  const lastPositionRef = useRef<{ lat: number; lon: number; timestamp?: number } | null>(null);
+
+  // Enhanced distance calculation with GPS + step-based fallback
+  const calculateDistance = useCallback((newLocation: Location.LocationObject): number => {
+    if (!lastPositionRef.current) {
+      lastPositionRef.current = {
+        lat: newLocation.coords.latitude,
+        lon: newLocation.coords.longitude,
+        timestamp: Date.now(),
+      };
+      return 0;
+    }
+
+    const { lat: lat1, lon: lon1 } = lastPositionRef.current;
+    const { latitude: lat2, longitude: lon2 } = newLocation.coords;
+    
+    // Enhanced distance calculation with accuracy validation
+    const accuracy = Math.min(newLocation.coords.accuracy || 50, 50);
+    
+    // Use GPS if accuracy is good (< 30 meters instead of 15)
+    if (accuracy <= 30) {
+      // Haversine formula for distance calculation
+      const R = 6371000; // Earth's radius in meters
+      const dLat = ((lat2 - lat1) * Math.PI) / 180;
+      const dLon = ((lon2 - lon1) * Math.PI) / 180;
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos((lat1 * Math.PI) / 180) *
+          Math.cos((lat2 * Math.PI) / 180) *
+          Math.sin(dLon / 2) *
+          Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const gpsDistance = R * c;
+
+      // Validate GPS distance is realistic
+      const timeDiff = Math.max((Date.now() - (lastPositionRef.current.timestamp || Date.now())) / 1000, 1);
+      const maxRealisticSpeed = 12; // m/s (43 km/h - fast running)
+      const maxDistance = maxRealisticSpeed * timeDiff;
+      
+      // Enhanced filtering with time-based validation
+      const minMovementThreshold = 0.1; // 0.1 meters minimum movement (more sensitive)
+      const maxJumpDistance = Math.min(maxDistance, 50); // Dynamic max based on time
+      
+      if (gpsDistance >= minMovementThreshold && gpsDistance <= maxJumpDistance) {
+        // Update last position with timestamp
+        lastPositionRef.current = {
+          lat: lat2,
+          lon: lon2,
+          timestamp: Date.now(),
+        };
+        return gpsDistance;
+      }
+    }
+    
+    // Fallback to step-based estimation when GPS is poor or unavailable
+    // Average step length varies by height and walking speed: 0.6-0.8m per step
+    const averageStepLength = 0.65; // meters per step (conservative estimate)
+    const stepBasedDistance = averageStepLength; // Return per-step distance
+    
+    // Update position even with poor GPS to maintain continuity
+    lastPositionRef.current = {
+      lat: lat2,
+      lon: lon2,
+      timestamp: Date.now(),
+    };
+    
+    // Return step-based distance only if we're actually moving
+    return stepBasedDistance;
+  }, []);
+
+  const resetDistance = useCallback(() => {
+    lastPositionRef.current = null;
+  }, []);
+
+  return { calculateDistance, resetDistance };
+};
+
+// Utility functions
+const formatTime = (seconds: number): string => {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+  return `${minutes}:${secs.toString().padStart(2, '0')}`;
+};
+
+const formatDistance = (km: number): string => {
+  if (km < 1) {
+    return `${Math.round(km * 1000)}m`;
+  }
+  return `${km.toFixed(2)}km`;
+};
+
+const formatPace = (pace: number): string => {
+  if (pace <= 0) return '--:--';
+  const minutes = Math.floor(pace / 60);
+  const seconds = Math.floor(pace % 60);
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+};
+
+// Main component
+export default function WalkScreen() {
+  const { user } = useAuth();
+  const {
+    isWalking,
+    currentWalk,
+    startWalk,
+    pauseWalk,
+    resumeWalk,
+    stopWalk,
+    updateSteps,
+    updateDistance,
+    addRoutePoint,
+    resetRoute,
+  } = useWalking();
+
+  const { calculateDistance, resetDistance } = useDistanceCalculation();
+
+  // Performance monitoring
+  const performanceMonitor = useRef(PerformanceMonitor.getInstance());
+  
+  // Memoized callbacks to prevent unnecessary re-renders
+  const handleLocationUpdate = useCallback(withPerformanceTracking('location-update', (location: Location.LocationObject) => {
+    if (!isWalking || currentWalk?.isPaused) return;
+
+    // More forgiving GPS accuracy threshold for better distance tracking
+    const accuracy = location.coords.accuracy || 50;
+    let distance = 0;
+    
+    // Use GPS if accuracy is reasonable (≤ 30m instead of 15m)
+    if (accuracy <= 30) {
+      distance = calculateDistance(location);
+    }
+    
+    // Update distance if we have a GPS-based measurement OR use step-based fallback
+    if (distance > 0) {
+      updateDistance(distance);
+    } else {
+      // Fallback: use step-based distance when GPS is poor
+      const averageStepLength = 0.65; // meters per step
+      updateDistance(averageStepLength / 10); // Small incremental distance for location updates
+    }
+
+    // Always add route point for tracking (even with poor GPS)
+    addRoutePoint({
+      lat: location.coords.latitude,
+      lon: location.coords.longitude,
+      timestamp: Date.now(),
+      accuracy: location.coords.accuracy || undefined,
+    });
+  }), [isWalking, currentWalk?.isPaused, calculateDistance, updateDistance, addRoutePoint]);
+
+  // Handle step detection with distance fallback
+  const handleStepDetected = useCallback(withPerformanceTracking('step-detected', () => {
+    if (!isWalking || currentWalk?.isPaused) return;
+    
+    updateSteps(1);
+    
+    // Add step-based distance when GPS is poor or unavailable
+    // This ensures distance tracking continues even indoors or with poor signal
+    const averageStepLength = 0.65; // meters per step
+    updateDistance(averageStepLength);
+  }), [isWalking, currentWalk?.isPaused, updateSteps, updateDistance]);
+
+  // Initialize performance monitoring
+  useEffect(() => {
+    performanceMonitor.current.startMonitoring(30000); // Monitor every 30 seconds
+    
+    return () => {
+      performanceMonitor.current.stopMonitoring();
+    };
+  }, []);
+
+  // Initialize sensor data cleanup
+  useEffect(() => {
+    const cleanupManager = DataCleanupManager.getInstance();
+    
+    // Register cleanup for sensor data buffers
+    cleanupManager.registerCleanupCallback(
+      'sensorData',
+      () => {
+        // Cleanup will be handled by the sensor hooks themselves
+        // This callback ensures the cleanup manager knows about sensor data
+        console.log('Sensor data cleanup triggered');
+      }
+    );
+
+    // Start cleanup when walking begins
+    if (isWalking) {
+      cleanupManager.startPeriodicCleanup(180000); // 3 minutes for sensor data
+    }
+
+    return () => {
+      cleanupManager.unregisterCleanupCallback('sensorData');
+      if (!isWalking) {
+        cleanupManager.stopPeriodicCleanup();
+      }
+    };
+  }, [isWalking]);
+
+  // Performance warning system
+  useEffect(() => {
+    if (!isWalking) return;
+    
+    const checkPerformance = () => {
+      const warnings = performanceMonitor.current.checkPerformanceThresholds();
+      if (warnings.length > 0) {
+        console.warn('Performance warnings:', warnings);
+        // In production, you might want to log these to analytics
+      }
+    };
+    
+    const interval = setInterval(checkPerformance, 60000); // Check every minute
+    return () => clearInterval(interval);
+  }, [isWalking]);
+
+  // Initialize sensor hooks
+  useLocationTracking(isWalking && !currentWalk?.isPaused, handleLocationUpdate);
+  useStepTracking(isWalking && !currentWalk?.isPaused, handleStepDetected);
+
+  // Handle app state changes
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      // Only pause tracking when app goes to background if background location is not enabled
+      // For production APK builds, we want to continue tracking in background
+      console.log('App state changed to:', nextAppState);
+      
+      // Removed automatic pause on background - let the activity continue
+      // if (nextAppState === 'background' && isWalking && !currentWalk?.isPaused) {
+      //   pauseWalk();
+      // }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription?.remove();
+  }, [isWalking, currentWalk?.isPaused, pauseWalk]);
+
+  // Control handlers
+  const handleStartWalk = useCallback(async () => {
+    if (!user) {
+      Alert.alert('Authentication Required', 'Please log in to start tracking your walk.');
       return;
     }
-    // Route is reset by startWalk; no need to clear locally
-    startWalk();
-  };
 
-  const handlePauseWalk = () => {
-    pauseWalk();
-  };
+    resetDistance();
+    resetRoute();
+    await startWalk();
+  }, [user, resetDistance, resetRoute, startWalk]);
 
-  const handleResumeWalk = () => {
-    resumeWalk();
-  };
+  const handlePauseWalk = useCallback(() => {
+    if (currentWalk?.isPaused) {
+      resumeWalk();
+    } else {
+      pauseWalk();
+    }
+  }, [currentWalk?.isPaused, resumeWalk, pauseWalk]);
 
-  const handleStopWalk = () => {
+  const handleStopWalk = useCallback(() => {
     Alert.alert(
-      'End Walk',
-      'Are you sure you want to end this walk?',
+      'Stop Walk',
+      'Are you sure you want to stop your walk? Your progress will be saved.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'End Walk', 
+        {
+          text: 'Stop',
           style: 'destructive',
-          onPress: () => {
-            console.log('Ending walk...');
-            // Do not clear route here; allow user to Save/Discard after stop
-            stopWalk();
-          }
-        }
+          onPress: async () => {
+            try {
+              // Reset distance calculation state
+              resetDistance();
+              
+              // Stop the walk and save to database
+              await stopWalk();
+              
+              // Show success feedback (you could add a toast notification here)
+              console.log('Walk completed and saved successfully');
+              
+            } catch (error) {
+              // Handle errors from stopWalk function
+              console.error('Error stopping walk:', error);
+              
+              // Show user-friendly error message
+              const errorMessage = error instanceof Error ? error.message : 'Failed to save walk data';
+              
+              // You could show a toast notification or alert here
+              // For now, we'll log the error
+              if (errorMessage.includes('database') || errorMessage.includes('connection')) {
+                console.error('Database save failed - walk data may be lost');
+                // Could show: "Walk completed but couldn't save to cloud. Please check your internet connection."
+              } else {
+                console.error('Unexpected error during walk completion');
+                // Could show: "An error occurred while completing your walk. Please try again."
+              }
+            }
+          },
+        },
       ]
+    );
+  }, [stopWalk, resetDistance]);
+
+  // Render stats
+  const renderStats = () => {
+    if (!currentWalk) return null;
+
+    const pace = currentWalk.metrics.averagePace;
+    const speed = currentWalk.metrics.speed * 3.6; // Convert m/s to km/h
+
+    return (
+      <View style={styles.statsContainer}>
+        <View style={styles.statItem}>
+          <Text style={styles.statValue}>{formatTime(currentWalk.duration)}</Text>
+          <Text style={styles.statLabel}>Time</Text>
+        </View>
+        
+        <View style={styles.statItem}>
+          <Text style={styles.statValue}>{formatDistance(currentWalk.distance)}</Text>
+          <Text style={styles.statLabel}>Distance</Text>
+        </View>
+        
+        <View style={styles.statItem}>
+          <Text style={styles.statValue}>{currentWalk.steps.toLocaleString()}</Text>
+          <Text style={styles.statLabel}>Steps</Text>
+        </View>
+        
+        <View style={styles.statItem}>
+          <Text style={styles.statValue}>{Math.round(currentWalk.calories)}</Text>
+          <Text style={styles.statLabel}>Calories</Text>
+        </View>
+        
+        <View style={styles.statItem}>
+          <Text style={styles.statValue}>{formatPace(pace)}</Text>
+          <Text style={styles.statLabel}>Pace (min/km)</Text>
+        </View>
+        
+        <View style={styles.statItem}>
+          <Text style={styles.statValue}>{speed.toFixed(1)}</Text>
+          <Text style={styles.statLabel}>Speed (km/h)</Text>
+        </View>
+      </View>
     );
   };
 
-  const handleSaveSummary = async () => {
-    if (!lastCompletedWalk) return;
-    try {
-      setSaving(true);
-      const ok = await saveCurrentWalk();
-      if (ok) {
-        Alert.alert('Saved', 'Your walk has been saved successfully.');
-        setShowSummaryModal(false);
-      } else {
-        Alert.alert('Save failed', 'Could not save your walk. Please try again.');
-      }
-    } catch (e) {
-      console.error(e);
-      Alert.alert('Error', 'An unexpected error occurred while saving.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDiscardSummary = () => {
-    setShowSummaryModal(false);
-    resetRoute();
-  };
-
-
-
   return (
-    <View style={styles.container}>
-      {/* Map Area */}
-      {Platform.OS === 'web' ? (
-        <MapPlaceholder 
-          currentLocation={currentLocation}
-          // routeCoordinates replaced with context points
-          routeCoordinates={routePoints.map((p) => ({ latitude: p.lat, longitude: p.lon }))}
-        />
-      ) : (
-        <WebView
-          ref={mapRef}
-          style={styles.map}
-          originWhitelist={["*"]}
-          source={{ html: leafletHtml }}
-          javaScriptEnabled
-          domStorageEnabled
-          allowFileAccess
-          onLoadEnd={() => {
-            // Initialize map with existing points without re-rendering WebView
-            mapInitializedRef.current = true;
-            const pts = routePoints.map(p => `[${p.lat}, ${p.lon}]`).join(',');
-            const initJs = `
-              try {
-                if (window.setRoutePoints) { window.setRoutePoints([${pts}]); }
-                ${currentLocation ? `if (window.updateLocation) { window.updateLocation([${currentLocation.latitude}, ${currentLocation.longitude}]); }` : ''}
-              } catch (e) { console.log('init map error', e); }
-              true;
-            `;
-            // Inject initial route and marker
-            mapRef.current?.injectJavaScript(initJs);
-          }}
-        />
-      )}
-
-      {/* Bottom Container with Stats and Controls */}
-      <View style={[styles.bottomContainer, { paddingBottom: Math.max(insets.bottom, 8) }]}>
-        {/* Status Data */}
-        <View style={styles.statsContainer}>
-          <Text style={styles.statusTitle}>
-            {isWalking ? (currentWalk?.isPaused ? 'Paused' : 'Walking') : 'Ready to Walk'}
-          </Text>
-          
-          {/* Main Time Display */}
-          <Text style={styles.mainTime}>{formatTime(elapsedTime)}</Text>
-          
-          {/* Stats Grid */}
-          <View style={styles.statsGrid}>
-            <View style={styles.statItem}>
-              <Footprints color="#4CAF50" size={20} />
-              <Text style={styles.statValue}>
-                {String(currentWalk?.steps ?? 0)}
-              </Text>
-              <Text style={styles.statLabel}>Steps</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Target color="#2196F3" size={20} />
-              <Text style={styles.statValue}>
-                {routeDistanceKm.toFixed(2)}
-              </Text>
-              <Text style={styles.statLabel}>Distance (km)</Text>
-            </View>
-            <View style={styles.statItem}>
-              <TrendingUp color="#FF9800" size={20} />
-              <Text style={styles.statValue}>
-                {Math.round(routeDistanceKm * 60)}
-              </Text>
-              <Text style={styles.statLabel}>Calories</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Zap color="#9C27B0" size={20} />
-              <Text style={styles.statValue}>{currentPace}</Text>
-              <Text style={styles.statLabel}>Pace (/km)</Text>
-            </View>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Walk Tracker</Text>
+        {currentWalk?.isPaused && (
+          <View style={styles.pausedIndicator}>
+            <Ionicons name="pause" size={16} color="#FF6B6B" />
+            <Text style={styles.pausedText}>Paused</Text>
           </View>
+        )}
+      </View>
 
-          {/* Splits */}
-          {splits.length > 0 && (
-            <View style={{ marginTop: 16 }}>
-              <Text style={{ fontSize: 16, fontWeight: '600', color: '#333', marginBottom: 8 }}>Splits</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-                {splits.map((s) => (
-                  <View key={s.kmIndex} style={{ backgroundColor: '#f1f3f5', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12 }}>
-                    <Text style={{ color: '#333', fontWeight: '600' }}>KM {s.kmIndex}</Text>
-                    <Text style={{ color: '#666' }}>{formatTime(s.durationSec)}</Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-          )}
-        </View>
+      <View style={styles.content}>
+        {renderStats()}
 
-        {/* Control Buttons */}
         <View style={styles.controlsContainer}>
           {!isWalking ? (
-            routePoints.length > 1 ? (
-              // Show Save/Discard when a completed route exists
-              <View style={{ flexDirection: 'row', gap: 12 }}>
-                <TouchableOpacity
-                  style={[styles.startButton, { backgroundColor: '#2196F3' }]}
-                  onPress={saveCurrentWalk}
-                >
-                  <Save color="white" size={24} />
-                  <Text style={styles.startButtonText}>Save Walk</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.startButton, { backgroundColor: '#9E9E9E' }]}
-                  onPress={resetRoute}
-                >
-                  <Trash color="white" size={24} />
-                  <Text style={styles.startButtonText}>Discard</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity
-                style={[styles.startButton, styles.startActivityButton]}
-                onPress={handleStartWalk}
-              >
-                <Play color="white" size={28} />
-                <Text style={styles.startButtonText}>Start Activity</Text>
-              </TouchableOpacity>
-            )
+            <TouchableOpacity style={styles.startButton} onPress={handleStartWalk}>
+              <Ionicons name="play" size={32} color="white" />
+              <Text style={styles.startButtonText}>Start Walk</Text>
+            </TouchableOpacity>
           ) : (
-            <View style={styles.walkingControls}>
+            <View style={styles.activeControls}>
               <TouchableOpacity
-                style={styles.controlButton}
-                onPress={currentWalk?.isPaused ? handleResumeWalk : handlePauseWalk}
+                style={[styles.controlButton, styles.pauseButton]}
+                onPress={handlePauseWalk}
               >
-                {currentWalk?.isPaused ? (
-                  <Play color="white" size={24} />
-                ) : (
-                  <Pause color="white" size={24} />
-                )}
+                <Ionicons
+                  name={currentWalk?.isPaused ? 'play' : 'pause'}
+                  size={24}
+                  color="white"
+                />
+                <Text style={styles.controlButtonText}>
+                  {currentWalk?.isPaused ? 'Resume' : 'Pause'}
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.controlButton, styles.stopButton]}
                 onPress={handleStopWalk}
               >
-                <StopCircle color="white" size={24} />
+                <Ionicons name="stop" size={24} color="white" />
+                <Text style={styles.controlButtonText}>Stop</Text>
               </TouchableOpacity>
             </View>
           )}
         </View>
-      </View>
 
-      {/* Permission Warning */}
-      {!locationPermission && (
-        <View style={[styles.permissionWarning, { top: insets.top + 20 }]}> 
-          <Text style={styles.permissionText}> 
-            Location access required for route tracking 
-          </Text> 
-          <TouchableOpacity  
-            style={styles.permissionButton}
-            onPress={requestLocationPermission}
-          >
-            <Text style={styles.permissionButtonText}>Enable</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Post-walk Summary Modal */}
-      <Modal
-        visible={showSummaryModal}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowSummaryModal(false)}
-      >
-        <View style={{ flex:1, backgroundColor:'rgba(0,0,0,0.4)', justifyContent:'flex-end' }}>
-          <View style={styles.summarySheet}>
-            <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>Activity Summary</Text>
-
-            {lastCompletedWalk ? (
-              <View>
-                {/* Stats grid styled like the screen card */}
-                <View style={styles.sheetStatRow}>
-                  <View style={styles.sheetStatItem}>
-                    <Text style={styles.sheetStatLabel}>Time</Text>
-                    <Text style={styles.sheetStatValue}>{formatTime(lastCompletedWalk.durationSec)}</Text>
-                  </View>
-                  <View style={styles.sheetStatItem}>
-                    <Text style={styles.sheetStatLabel}>Distance</Text>
-                    <Text style={styles.sheetStatValue}>{lastCompletedWalk.distanceKm.toFixed(2)} km</Text>
-                  </View>
-                </View>
-                <View style={styles.sheetStatRow}>
-                  <View style={styles.sheetStatItem}>
-                    <Text style={styles.sheetStatLabel}>Steps</Text>
-                    <Text style={styles.sheetStatValue}>{String(lastCompletedWalk.steps)}</Text>
-                  </View>
-                  <View style={styles.sheetStatItem}>
-                    <Text style={styles.sheetStatLabel}>Calories</Text>
-                    <Text style={styles.sheetStatValue}>{Math.round(lastCompletedWalk.calories)} kcal</Text>
-                  </View>
-                </View>
-                <View style={styles.sheetStatRow}>
-                  <View style={styles.sheetStatItem}>
-                    <Text style={styles.sheetStatLabel}>Pace</Text>
-                    <Text style={styles.sheetStatValue}>{formatPaceFrom(lastCompletedWalk.durationSec, lastCompletedWalk.distanceKm)} /km</Text>
-                  </View>
-                  <View style={[styles.sheetStatItem, { opacity: 0 }]}>
-                    <Text style={styles.sheetStatLabel}> </Text>
-                    <Text style={styles.sheetStatValue}> </Text>
-                  </View>
-                </View>
-
-                <View style={styles.sheetDivider} />
-
-                {/* Actions */}
-                <View style={styles.sheetActions}>
-                  <TouchableOpacity
-                    style={[styles.primaryAction, { opacity: saving ? 0.8 : 1 }]}
-                    onPress={handleSaveSummary}
-                    disabled={saving}
-                  >
-                    <Save color="white" size={22} />
-                    <Text style={styles.primaryActionText}>{saving ? 'Saving...' : 'Save Activity'}</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.secondaryAction}
-                    onPress={handleDiscardSummary}
-                  >
-                    <Trash color="#2E7D32" size={22} />
-                    <Text style={styles.secondaryActionText}>Discard</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <Text style={{ textAlign:'center', color:'#666' }}>No summary available.</Text>
-            )}
+        {!user && (
+          <View style={styles.authWarning}>
+            <Ionicons name="warning" size={20} color="#FF6B6B" />
+            <Text style={styles.authWarningText}>
+              Please log in to save your walk data
+            </Text>
           </View>
-        </View>
-      </Modal>
-    </View>
+        )}
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#F8F9FA',
   },
-  map: {
-    flex: 1,
-  },
-  mapPlaceholder: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-    justifyContent: 'center',
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 40,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E9ECEF',
   },
-  mapIcon: {
-    marginBottom: 20,
-    opacity: 0.6,
-  },
-  mapTitle: {
+  title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
+    color: '#2C3E50',
   },
-  mapSubtitle: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 30,
+  pausedIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFE5E5',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
-  locationCard: {
+  pausedText: {
+    marginLeft: 4,
+    fontSize: 14,
+    color: '#FF6B6B',
+    fontWeight: '600',
+  },
+  content: {
+    flex: 1,
+    padding: 20,
+  },
+  statsContainer: {
     backgroundColor: 'white',
     borderRadius: 16,
     padding: 20,
-    width: '100%',
-    maxWidth: 300,
+    marginBottom: 24,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  locationHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    gap: 8,
-  },
-  locationTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  locationCoords: {
-    fontSize: 14,
-    color: '#666',
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    marginBottom: 8,
-  },
-  routeInfo: {
-    fontSize: 14,
-    color: '#4CAF50',
-    fontWeight: '500',
-  },
-  bottomContainer: {
-    backgroundColor: 'white',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: -4,
-    },
-    shadowOpacity: 0.1,
     shadowRadius: 8,
-    elevation: 8,
-  },
-  statsContainer: {
-    marginBottom: 24,
-  },
-  statusTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  mainTime: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: '#333',
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    elevation: 4,
   },
   statItem: {
+    width: '48%',
     alignItems: 'center',
-    flex: 1,
+    marginBottom: 16,
   },
   statValue: {
-    fontSize: 16,
+    fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
-    marginTop: 8,
+    color: '#2C3E50',
     marginBottom: 4,
   },
   statLabel: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 14,
+    color: '#6C757D',
     textAlign: 'center',
   },
   controlsContainer: {
     alignItems: 'center',
+    marginTop: 'auto',
+    marginBottom: 40,
   },
   startButton: {
-    backgroundColor: '#4CAF50',
-    borderRadius: 30,
-    paddingVertical: 18,
-    paddingHorizontal: 40,
+    backgroundColor: '#28A745',
+    paddingHorizontal: 48,
+    paddingVertical: 20,
+    borderRadius: 50,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
+    shadowColor: '#28A745',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
   },
-  startActivityButton: {
-    alignSelf: 'center',
-    width: '90%',
-    marginTop: -20,
-    marginBottom: 0,
-  },
   startButtonText: {
-    fontSize: 18,
-    fontWeight: '600',
     color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginLeft: 12,
   },
-  walkingControls: {
+  activeControls: {
     flexDirection: 'row',
-    justifyContent: 'center',
     gap: 20,
   },
   controlButton: {
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    borderRadius: 30,
-    width: 60,
-    height: 60,
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 25,
+    flexDirection: 'row',
     alignItems: 'center',
+    minWidth: 120,
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
+  },
+  pauseButton: {
+    backgroundColor: '#FFC107',
   },
   stopButton: {
-    backgroundColor: 'rgba(244, 67, 54, 0.9)',
+    backgroundColor: '#DC3545',
   },
-  permissionWarning: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    backgroundColor: '#FF9800',
-    borderRadius: 12,
-    padding: 16,
+  controlButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  authWarning: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  permissionText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '500',
-    flex: 1,
-  },
-  permissionButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    backgroundColor: '#FFE5E5',
+    padding: 12,
     borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    marginTop: 16,
   },
-  permissionButtonText: {
-    color: 'white',
+  authWarningText: {
+    marginLeft: 8,
     fontSize: 14,
-    fontWeight: '600',
-  },
-  summarySheet: {
-    backgroundColor: 'white',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 24,
-    paddingTop: 12,
-    paddingBottom: 32,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 12,
-  },
-  sheetHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: '#E0E0E0',
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: 20,
-  },
-  sheetTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#333',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  sheetStatRow: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  sheetStatItem: {
-    flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: 8,
-  },
-  sheetStatLabel: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 6,
-  },
-  sheetStatValue: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#333',
-  },
-  sheetDivider: {
-    height: 1,
-    backgroundColor: '#E0E0E0',
-    marginVertical: 24,
-  },
-  sheetActions: {
-    gap: 12,
-  },
-  primaryAction: {
-    backgroundColor: '#2E7D32',
-    borderRadius: 16,
-    paddingVertical: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  primaryActionText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  secondaryAction: {
-    backgroundColor: '#F5F5F5',
-    borderRadius: 16,
-    paddingVertical: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  secondaryActionText: {
-    color: '#2E7D32',
-    fontSize: 16,
-    fontWeight: '600',
+    color: '#FF6B6B',
+    fontWeight: '500',
   },
 });
-
-// Haversine distance in meters between two coordinates
-const haversineDistance = (a: LocationCoordinate, b: LocationCoordinate) => {
-  const toRad = (v: number) => (v * Math.PI) / 180;
-  const R = 6371000; // meters
-  const dLat = toRad(b.latitude - a.latitude);
-  const dLon = toRad(b.longitude - a.longitude);
-  const lat1 = toRad(a.latitude);
-  const lat2 = toRad(b.latitude);
-  const sinDLat = Math.sin(dLat / 2);
-  const sinDLon = Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(
-    Math.sqrt(sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon),
-    Math.sqrt(1 - (sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon))
-  );
-  return R * c;
-};
-
-// Static Leaflet HTML with JS APIs for incremental updates from React Native
-const buildLeafletHtmlStatic = () => {
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <style>
-    html, body, #map { height: 100%; width: 100%; margin: 0; padding: 0; background: #f8f9fa; }
-    /* Hide watermark/attribution */
-    .leaflet-control-attribution, .leaflet-control-logo { display: none !important; }
-    .leaflet-touch .leaflet-bar a { color: #333; }
-  </style>
-</head>
-<body>
-  <div id="map"></div>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script>
-    const map = L.map('map', { zoomControl: true, attributionControl: false });
-    // Default view
-    map.setView([0, 0], 2);
-
-    // Light theme tile layer (CartoDB Positron)
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      maxZoom: 19,
-      attribution: ''
-    }).addTo(map);
-
-    let routePoints = [];
-    let polyline = null;
-    let locationMarker = null;
-
-    function rebuildPolyline() {
-      if (polyline) {
-        try { map.removeLayer(polyline); } catch (e) {}
-        polyline = null;
-      }
-      if (routePoints.length > 1) {
-        polyline = L.polyline(routePoints, { color: '#2E7D32', weight: 5 }).addTo(map);
-        try {
-          map.fitBounds(polyline.getBounds(), { padding: [40, 40] });
-        } catch (e) {}
-      } else if (routePoints.length === 1) {
-        map.setView(routePoints[0], 16);
-      }
-    }
-
-    // Set all points at once (used on WebView load)
-    window.setRoutePoints = function(points) {
-      routePoints = points;
-      rebuildPolyline();
-    };
-
-    // Add a single point incrementally
-    window.addPoint = function(point) {
-      routePoints.push(point);
-      if (polyline && polyline.addLatLng) {
-        try { polyline.addLatLng(point); } catch (e) { rebuildPolyline(); }
-      } else {
-        rebuildPolyline();
-      }
-    };
-
-    // Update current location marker without changing the route
-    window.updateLocation = function(point) {
-      if (!locationMarker) {
-        locationMarker = L.circleMarker(point, { radius: 8, color: '#FFFFFF', weight: 3, fillColor: '#2E7D32', fillOpacity: 1 }).addTo(map);
-      } else {
-        locationMarker.setLatLng(point);
-      }
-    };
-  </script>
-</body>
-</html>`;
-};

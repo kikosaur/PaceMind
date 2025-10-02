@@ -8,10 +8,10 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-// Removed @expo/vector-icons in favor of lucide-react-native
-import { Mail, ArrowLeft } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../styles/designSystem';
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
@@ -40,7 +40,7 @@ export default function ForgotPasswordScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <LinearGradient
-        colors={['#667eea', '#764ba2']}
+        colors={[Colors.primaryLight, Colors.primary, Colors.primaryDark]}
         style={styles.gradient}
       >
         <View style={styles.content}>
@@ -48,7 +48,7 @@ export default function ForgotPasswordScreen() {
             style={styles.backButton}
             onPress={() => router.back()}
           >
-            <ArrowLeft color="white" size={24} />
+            <Ionicons name="arrow-back" color="white" size={24} />
           </TouchableOpacity>
 
           <View style={styles.header}>
@@ -60,16 +60,15 @@ export default function ForgotPasswordScreen() {
 
           <View style={styles.form}>
             <View style={styles.inputContainer}>
-              <Mail color="#666" size={20} style={styles.inputIcon} />
+              <Ionicons name="mail-outline" size={20} color={Colors.gray600} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 placeholder="Email"
-                placeholderTextColor="#666"
+                placeholderTextColor={Colors.gray500}
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
                 autoCapitalize="none"
-                autoComplete="email"
               />
             </View>
 
@@ -98,7 +97,7 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: 24,
+    padding: Spacing.xl,
     justifyContent: 'center',
   },
   backButton: {
@@ -109,53 +108,88 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    marginBottom: 48,
+    marginBottom: Spacing['4xl'],
   },
   title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: 'white',
-    marginBottom: 16,
+    fontSize: Typography.fontSize['4xl'],
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.white,
+    marginBottom: Spacing.sm,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: Typography.fontSize.base,
     color: 'rgba(255, 255, 255, 0.8)',
     textAlign: 'center',
     lineHeight: 24,
   },
   form: {
-    marginBottom: 32,
+    marginBottom: Spacing['2xl'],
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'white',
-    borderRadius: 12,
-    marginBottom: 24,
-    paddingHorizontal: 16,
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.base,
+    paddingHorizontal: Spacing.base,
     height: 56,
+    ...Shadows.sm,
   },
   inputIcon: {
-    marginRight: 12,
+    marginRight: Spacing.md,
   },
   input: {
     flex: 1,
-    fontSize: 16,
-    color: '#333',
+    fontSize: Typography.fontSize.base,
+    color: Colors.textPrimary,
   },
   resetButton: {
-    backgroundColor: '#4CAF50',
-    borderRadius: 12,
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.md,
     height: 56,
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: Spacing.sm,
+    ...Shadows.md,
   },
   resetButtonDisabled: {
     opacity: 0.6,
   },
   resetButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: '600',
+    color: Colors.white,
+    fontSize: Typography.fontSize.lg,
+    fontWeight: Typography.fontWeight.semibold,
+  },
+  successText: {
+    color: '#ddffdd',
+    backgroundColor: 'rgba(0,255,0,0.15)',
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    marginTop: Spacing.md,
+    textAlign: 'center',
+  },
+  errorText: {
+    color: '#ffdddd',
+    backgroundColor: 'rgba(255,0,0,0.15)',
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    marginTop: Spacing.md,
+    textAlign: 'center',
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  footerText: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: Typography.fontSize.sm,
+  },
+  loginLink: {
+    color: Colors.white,
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.semibold,
   },
 });

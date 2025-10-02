@@ -4,22 +4,24 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
-  useWindowDimensions,
+  ViewStyle,
+  TextStyle,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWalking } from '@/contexts/WalkingContext';
-import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Footprints, Target, TrendingUp, Award, Play, Sun } from 'lucide-react-native';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
+import { Colors, Typography, Spacing, BorderRadius } from '../styles/designSystem';
+import { useResponsive } from '../hooks/useResponsive';
+import { StatCard, Button, Card } from '../components';
 
 export default function HomeScreen() {
   const { user } = useAuth();
-  const { todayStats, weeklyGoal, motivationLevel } = useWalking();
+  const { todayStats, motivationLevel } = useWalking();
   const [greeting, setGreeting] = useState('');
-  const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const responsive = useResponsive();
 
   useEffect(() => {
     const hour = new Date().getHours();
@@ -28,17 +30,7 @@ export default function HomeScreen() {
     else setGreeting('Good Evening');
   }, []);
 
-  const progressPercentage = weeklyGoal?.dailySteps
-    ? ((todayStats?.steps ?? 0) / weeklyGoal.dailySteps) * 100
-    : 0;
-
   const safeMotivation = typeof motivationLevel === 'number' ? motivationLevel : 0;
-  
-  const getMotivationColor = () => {
-    if (safeMotivation >= 80) return '#4CAF50';
-    if (safeMotivation >= 60) return '#FF9800';
-    return '#F44336';
-  };
   
   const getMotivationMessage = () => {
     if (safeMotivation >= 80) return "You're crushing it! 🔥";
@@ -54,123 +46,147 @@ export default function HomeScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <ScrollView showsVerticalScrollIndicator={false}>
-        <LinearGradient
-          colors={['#667eea', '#764ba2']}
-          style={styles.header}
-        >
+        <View style={styles.header}>
           <View style={styles.headerContent}>
             <View>
               <Text style={styles.greeting}>{greeting}</Text>
               <Text style={styles.userName}>{(user.user_metadata?.name || user.user_metadata?.full_name || user.email || 'Walker')}</Text>
             </View>
             <View style={styles.weatherContainer}>
-              <Sun color="white" size={24} />
+              <Ionicons name="sunny" color="#4CAF50" size={24} />
               <Text style={styles.weatherText}>22°C</Text>
             </View>
           </View>
-        </LinearGradient>
+        </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Today&apos;s Progress</Text>
-          
-          <View style={styles.statsGrid}>
-            <View style={[styles.statCard, { width: (width - 52) / 2 }]}>
-              <View style={styles.statIcon}>
-                <Footprints color="#4CAF50" size={24} />
-              </View>
-              <Text style={styles.statValue}>{String(todayStats.steps)}</Text>
-              <Text style={styles.statLabel}>Steps</Text>
-              <View style={styles.progressBar}>
-                <View 
-                  style={[
-                    styles.progressFill, 
-                    { width: `${Math.min(progressPercentage, 100)}%` }
-                  ]} 
-                />
-              </View>
-            </View>
+          <View style={{
+            ...styles.statsGrid,
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            justifyContent: 'space-between',
+          } as ViewStyle}>
+            <StatCard
+              icon={<FontAwesome5 name="walking" color={Colors.primary} size={24} />}
+              value={String(todayStats?.steps ?? 0)}
+              label="Steps"
+              variant="primary"
+              style={{
+                ...styles.statCardGrid,
+                width: responsive.isSmall ? '48%' : '48%',
+                marginBottom: Spacing.md,
+              } as ViewStyle}
+            />
 
-            <View style={[styles.statCard, { width: (width - 52) / 2 }]}>
-              <View style={styles.statIcon}>
-                <Target color="#2196F3" size={24} />
-              </View>
-              <Text style={styles.statValue}>{Number(todayStats?.distance ?? 0).toFixed(1)}</Text>
-              <Text style={styles.statLabel}>km</Text>
-            </View>
+            <StatCard
+              icon={<Ionicons name="flag" color={Colors.success} size={24} />}
+              value={Number(todayStats?.distance ?? 0).toFixed(1)}
+              label="Kilometers"
+              variant="success"
+              style={{
+                ...styles.statCardGrid,
+                width: responsive.isSmall ? '48%' : '48%',
+                marginBottom: Spacing.md,
+              } as ViewStyle}
+            />
 
-            <View style={[styles.statCard, { width: (width - 52) / 2 }]}>
-              <View style={styles.statIcon}>
-                <Target color="#FF9800" size={24} />
-              </View>
-              <Text style={styles.statValue}>{String(todayStats?.duration ?? 0)}</Text>
-              <Text style={styles.statLabel}>minutes</Text>
-            </View>
+            <StatCard
+              icon={<Ionicons name="flash" color={Colors.warning} size={24} />}
+              value={String(todayStats?.calories ?? 0)}
+              label="Calories"
+              variant="warning"
+              style={{
+                ...styles.statCardGrid,
+                width: responsive.isSmall ? '48%' : '48%',
+                marginBottom: Spacing.md,
+              } as ViewStyle}
+            />
 
-            <View style={[styles.statCard, { width: (width - 52) / 2 }]}>
-              <View style={styles.statIcon}>
-                <TrendingUp color="#9C27B0" size={24} />
-              </View>
-              <Text style={styles.statValue}>{String(todayStats?.calories ?? 0)}</Text>
-              <Text style={styles.statLabel}>calories</Text>
+            <StatCard
+              icon={<Ionicons name="time" color={Colors.info} size={24} />}
+              value={Math.round(todayStats?.duration ?? 0).toString()}
+              label="Active Minutes"
+              style={{
+                ...styles.statCardGrid,
+                width: responsive.isSmall ? '48%' : '48%',
+                marginBottom: Spacing.md,
+              } as ViewStyle}
+            />
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>AI Insights</Text>
+          <View style={styles.insightCard}>
+            <Ionicons name="flash" color="#4CAF50" size={24} />
+            <View style={styles.insightContent}>
+              <Text style={styles.insightTitle}>Great Progress!</Text>
+              <Text style={styles.insightText as TextStyle}>
+                Your motivation has increased by 15% this week. You&apos;re most active on weekdays 
+                between 2-4 PM. Consider scheduling walks during this time for best results.
+              </Text>
             </View>
           </View>
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Motivation Level</Text>
-          <View style={styles.motivationCard}>
+          <Card variant="default" padding="lg">
             <View style={styles.motivationHeader}>
-              <Award color={getMotivationColor()} size={24} />
-              <Text style={[styles.motivationLevel, { color: getMotivationColor() }]}>
-                {safeMotivation}%
+              <Text style={{
+                ...styles.motivationLevel,
+                color: Colors.primary
+              } as TextStyle}>
+                {motivationLevel}%
               </Text>
+              <Ionicons name="trending-up" color={Colors.primary} size={24} />
             </View>
-            <Text style={styles.motivationMessage}>{getMotivationMessage()}</Text>
-            <View style={styles.motivationBar}>
+            <Text style={styles.motivationMessage}>
+              {getMotivationMessage()}
+            </Text>
+            <View style={{
+              ...styles.motivationBar,
+              backgroundColor: Colors.gray200
+            } as ViewStyle}>
               <View 
-                style={[
-                  styles.motivationFill, 
-                  { 
-                    width: `${safeMotivation}%`,
-                    backgroundColor: getMotivationColor()
-                  }
-                ]} 
+                style={{
+                  ...styles.motivationFill,
+                  width: `${motivationLevel}%`,
+                  backgroundColor: Colors.primary 
+                } as ViewStyle}
               />
             </View>
-          </View>
+          </Card>
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
-          <TouchableOpacity 
-            style={styles.actionButton}
+
+          <Button 
+            variant="primary"
+            size="lg"
+            icon={<Ionicons name="play" color="white" size={24} />}
             onPress={() => router.push('/(tabs)/walk')}
+            style={{
+              ...styles.actionButton,
+              marginBottom: Spacing.md,
+            } as ViewStyle}
           >
-            <LinearGradient
-              colors={['#4CAF50', '#45a049']}
-              style={styles.actionButtonGradient}
-            >
-              <Play color="white" size={24} />
-              <Text style={styles.actionButtonText}>Start Walking</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+            Start Walking
+          </Button>
 
-          <TouchableOpacity 
-            style={styles.secondaryActionButton}
+          <Button 
+            variant="outline"
+            size="md"
             onPress={() => router.push('/(tabs)/journal')}
+            style={{
+              ...styles.secondaryActionButton,
+              marginBottom: Spacing.md,
+            } as ViewStyle}
           >
-            <Text style={styles.secondaryActionText}>Log Mood</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>AI Insights</Text>
-          <View style={styles.insightCard}>
-            <Text style={styles.insightText}>
-              Based on your recent activity, I recommend a 15-minute walk around your neighborhood. 
-              The weather is perfect, and you tend to feel more motivated in the afternoon! 🌟
-            </Text>
-          </View>
+            Log Mood
+          </Button>
         </View>
       </ScrollView>
     </View>
@@ -180,12 +196,15 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: Colors.background,
   },
   header: {
-    paddingTop: 20,
-    paddingBottom: 30,
-    paddingHorizontal: 20,
+    backgroundColor: Colors.background,
+    paddingTop: Spacing.xl,
+    paddingBottom: Spacing['2xl'],
+    paddingHorizontal: Spacing.xl,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
   },
   headerContent: {
     flexDirection: 'row',
@@ -193,81 +212,45 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   greeting: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginBottom: 4,
+    fontSize: Typography.fontSize.base,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.xs,
   },
   userName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: 'white',
-  },
+    fontSize: Typography.fontSize['2xl'],
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  } as TextStyle,
   weatherContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: Spacing.sm,
   },
   weatherText: {
-    color: 'white',
-    fontSize: 16,
+    color: Colors.primary,
+    fontSize: Typography.fontSize.base,
     fontWeight: '500',
-  },
+  } as TextStyle,
   section: {
-    padding: 20,
+    padding: Spacing.xl,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 16,
-  },
+    fontSize: Typography.fontSize.lg,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginBottom: Spacing.base,
+  } as TextStyle,
   statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.base,
   },
-  statCard: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
+  statCardGrid: {
+    minHeight: 100,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  statIcon: {
-    marginBottom: 8,
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 8,
-  },
-  progressBar: {
-    width: '100%',
-    height: 4,
-    backgroundColor: '#E5E5E5',
-    borderRadius: 2,
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#4CAF50',
-    borderRadius: 2,
-  },
-  motivationCard: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
@@ -276,66 +259,54 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: Spacing.md,
   },
   motivationLevel: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
+    fontSize: Typography.fontSize['2xl'],
+    fontWeight: '700',
+  } as TextStyle,
   motivationMessage: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 16,
+    fontSize: Typography.fontSize.base,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.base,
   },
   motivationBar: {
     width: '100%',
     height: 8,
-    backgroundColor: '#E5E5E5',
-    borderRadius: 4,
+    backgroundColor: Colors.gray200,
+    borderRadius: BorderRadius.sm,
   },
   motivationFill: {
     height: '100%',
-    borderRadius: 4,
+    borderRadius: BorderRadius.sm,
   },
   actionButton: {
-    marginBottom: 12,
-  },
-  actionButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    borderRadius: 16,
-    gap: 12,
-  },
-  actionButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: '600',
+    marginBottom: Spacing.md,
   },
   secondaryActionButton: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    paddingVertical: 16,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#4CAF50',
+    marginBottom: Spacing.md,
   },
-  secondaryActionText: {
-    color: '#4CAF50',
-    fontSize: 16,
-    fontWeight: '600',
+  insightText: {
+    fontSize: 14,
+    color: '#2E7D32',
+    lineHeight: 20,
   },
   insightCard: {
     backgroundColor: '#E8F5E8',
     borderRadius: 16,
     padding: 20,
+    flexDirection: 'row',
+    gap: 16,
     borderLeftWidth: 4,
     borderLeftColor: '#4CAF50',
   },
-  insightText: {
+  insightContent: {
+    flex: 1,
+  },
+  insightTitle: {
     fontSize: 16,
+    fontWeight: 'bold',
     color: '#2E7D32',
-    lineHeight: 24,
+    marginBottom: 8,
   },
 });

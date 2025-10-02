@@ -4,19 +4,25 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
+  TextStyle,
+  ViewStyle,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useWalking } from '@/contexts/WalkingContext';
+import { useWalkingSettings } from '@/contexts/SettingsContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Footprints, Target, TrendingUp, Award, Zap } from 'lucide-react-native';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
+import { Colors, Typography, Spacing, BorderRadius } from '../styles/designSystem';
+import { useResponsive } from '../hooks/useResponsive';
+import { StatCard, Button } from '../components';
 
 type TimeRange = 'week' | 'month' | 'year';
 
 export default function ProgressScreen() {
   const [selectedRange, setSelectedRange] = useState<TimeRange>('week');
-  const { weeklyStats, monthlyStats, achievements, motivationTrend } = useWalking();
+  const { weeklyStats, monthlyStats, yearlyStats, motivationTrend } = useWalking();
+  const { dailyStepGoal } = useWalkingSettings();
   const insets = useSafeAreaInsets();
+  const responsive = useResponsive();
 
   const timeRanges = [
     { key: 'week' as TimeRange, label: 'Week' },
@@ -31,7 +37,7 @@ export default function ProgressScreen() {
       case 'month':
         return monthlyStats;
       case 'year':
-        return { steps: 45000, distance: 32.5, duration: 420, walks: 28 };
+        return yearlyStats;
       default:
         return weeklyStats;
     }
@@ -42,61 +48,75 @@ export default function ProgressScreen() {
   const renderTimeRangeSelector = () => (
     <View style={styles.timeRangeContainer}>
       {timeRanges.map((range) => (
-        <TouchableOpacity
+        <Button
           key={range.key}
-          style={[
-            styles.timeRangeButton,
-            selectedRange === range.key && styles.timeRangeButtonActive
-          ]}
+          variant={selectedRange === range.key ? 'primary' : 'outline'}
+          size="sm"
           onPress={() => setSelectedRange(range.key)}
+          style={styles.timeRangeButton}
         >
-          <Text style={[
-            styles.timeRangeText,
-            selectedRange === range.key && styles.timeRangeTextActive
-          ]}>
-            {range.label}
-          </Text>
-        </TouchableOpacity>
+          {range.label}
+        </Button>
       ))}
     </View>
   );
 
   const renderStatsCards = () => (
-    <View style={styles.statsContainer}>
-      <View style={styles.statsRow}>
-        <View style={styles.statCard}>
-          <View style={styles.statIcon}>
-            <Footprints color="#4CAF50" size={24} />
-          </View>
-          <Text style={styles.statValue}>{String(stats.steps)}</Text>
-          <Text style={styles.statLabel}>Total Steps</Text>
-        </View>
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Progress Overview</Text>
+      <View style={{
+        ...styles.statsGrid,
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'space-between',
+      } as ViewStyle}>
+        <StatCard
+          icon={<FontAwesome5 name="walking" color={Colors.primary} size={24} />}
+          value={String(stats.steps)}
+          label="Total Steps"
+          variant="primary"
+          style={{
+            ...styles.statCardGrid,
+            width: responsive.isSmall ? '48%' : '48%',
+            marginBottom: Spacing.md,
+          } as ViewStyle}
+        />
 
-        <View style={styles.statCard}>
-          <View style={styles.statIcon}>
-            <Target color="#2196F3" size={24} />
-          </View>
-          <Text style={styles.statValue}>{stats.distance.toFixed(1)}</Text>
-          <Text style={styles.statLabel}>km Walked</Text>
-        </View>
-      </View>
+        <StatCard
+          icon={<Ionicons name="flag" color={Colors.success} size={24} />}
+          value={stats.distance.toFixed(1)}
+          label="km Walked"
+          variant="success"
+          style={{
+            ...styles.statCardGrid,
+            width: responsive.isSmall ? '48%' : '48%',
+            marginBottom: Spacing.md,
+          } as ViewStyle}
+        />
 
-      <View style={styles.statsRow}>
-        <View style={styles.statCard}>
-          <View style={styles.statIcon}>
-            <Target color="#FF9800" size={24} />
-          </View>
-          <Text style={styles.statValue}>{stats.duration}</Text>
-          <Text style={styles.statLabel}>Minutes</Text>
-        </View>
+        <StatCard
+          icon={<Ionicons name="time" color={Colors.info} size={24} />}
+          value={String(stats.duration)}
+          label="Minutes"
+          variant="default"
+          style={{
+            ...styles.statCardGrid,
+            width: responsive.isSmall ? '48%' : '48%',
+            marginBottom: Spacing.md,
+          } as ViewStyle}
+        />
 
-        <View style={styles.statCard}>
-          <View style={styles.statIcon}>
-            <TrendingUp color="#9C27B0" size={24} />
-          </View>
-          <Text style={styles.statValue}>{stats.walks}</Text>
-          <Text style={styles.statLabel}>Walks</Text>
-        </View>
+        <StatCard
+          icon={<Ionicons name="trending-up" color={Colors.warning} size={24} />}
+          value={String(stats.walks)}
+          label="Walks"
+          variant="warning"
+          style={{
+            ...styles.statCardGrid,
+            width: responsive.isSmall ? '48%' : '48%',
+            marginBottom: Spacing.md,
+          } as ViewStyle}
+        />
       </View>
     </View>
   );
@@ -114,7 +134,7 @@ export default function ProgressScreen() {
                   { 
                     height: `${point.value}%`,
                     backgroundColor: point.value >= 70 ? '#4CAF50' : 
-                                   point.value >= 40 ? '#FF9800' : '#F44336'
+                                   point.value >= 40 ? '#66BB6A' : '#2E7D32'
                   }
                 ]} 
               />
@@ -128,11 +148,11 @@ export default function ProgressScreen() {
             <Text style={styles.legendText}>High (70%+)</Text>
           </View>
           <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: '#FF9800' }]} />
+            <View style={[styles.legendColor, { backgroundColor: '#66BB6A' }]} />
             <Text style={styles.legendText}>Medium (40-69%)</Text>
           </View>
           <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: '#F44336' }]} />
+            <View style={[styles.legendColor, { backgroundColor: '#2E7D32' }]} />
             <Text style={styles.legendText}>Low (0-39%)</Text>
           </View>
         </View>
@@ -140,27 +160,7 @@ export default function ProgressScreen() {
     </View>
   );
 
-  const renderAchievements = () => (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Recent Achievements</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <View style={styles.achievementsContainer}>
-          {achievements.map((achievement, index) => (
-            <View key={`achievement-${achievement.title}-${index}`} style={styles.achievementCard}>
-              <View style={[styles.achievementIcon, { backgroundColor: achievement.color }]}>
-                <Award color="white" size={24} />
-              </View>
-              <Text style={styles.achievementTitle}>{achievement.title}</Text>
-              <Text style={styles.achievementDescription}>{achievement.description}</Text>
-              <Text style={styles.achievementDate}>
-                {new Date(achievement.date).toDateString()}
-              </Text>
-            </View>
-          ))}
-        </View>
-      </ScrollView>
-    </View>
-  );
+
 
   const renderGoalProgress = () => (
     <View style={styles.section}>
@@ -168,19 +168,19 @@ export default function ProgressScreen() {
       <View style={styles.goalCard}>
         <View style={styles.goalHeader}>
           <Text style={styles.goalTitle}>Daily Steps Goal</Text>
-          <Text style={styles.goalTarget}>10,000 steps</Text>
+          <Text style={styles.goalTarget}>{dailyStepGoal.toLocaleString()} steps</Text>
         </View>
         <View style={styles.goalProgress}>
           <View style={styles.goalProgressBar}>
             <View 
               style={[
                 styles.goalProgressFill,
-                { width: `${Math.min((stats.steps / 70000) * 100, 100)}%` }
+                { width: `${Math.min((stats.steps / (dailyStepGoal * 7)) * 100, 100)}%` }
               ]} 
             />
           </View>
           <Text style={styles.goalProgressText}>
-            {Math.round((stats.steps / 70000) * 100)}% of weekly goal
+            {Math.round((stats.steps / (dailyStepGoal * 7)) * 100)}% of weekly goal
           </Text>
         </View>
       </View>
@@ -189,28 +189,24 @@ export default function ProgressScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <LinearGradient
-        colors={['#667eea', '#764ba2']}
-        style={styles.header}
-      >
+      <View style={styles.header}>
         <Text style={styles.headerTitle}>Progress</Text>
         <Text style={styles.headerSubtitle}>Track your walking journey</Text>
-      </LinearGradient>
+      </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {renderTimeRangeSelector()}
         {renderStatsCards()}
         {renderGoalProgress()}
         {renderMotivationTrend()}
-        {renderAchievements()}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>AI Insights</Text>
           <View style={styles.insightCard}>
-            <Zap color="#4CAF50" size={24} />
+            <Ionicons name="flash" color="#4CAF50" size={24} />
             <View style={styles.insightContent}>
               <Text style={styles.insightTitle}>Great Progress!</Text>
-              <Text style={styles.insightText}>
+              <Text style={styles.insightText as TextStyle}>
                 Your motivation has increased by 15% this week. You&apos;re most active on weekdays 
                 between 2-4 PM. Consider scheduling walks during this time for best results.
               </Text>
@@ -225,76 +221,89 @@ export default function ProgressScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: Colors.background,
   },
   header: {
-    paddingTop: 20,
-    paddingBottom: 30,
-    paddingHorizontal: 20,
+    backgroundColor: Colors.background,
+    paddingTop: Spacing.xl,
+    paddingBottom: Spacing['2xl'],
+    paddingHorizontal: Spacing.xl,
     alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: 'white',
-    marginBottom: 8,
+    fontSize: Typography.fontSize['2xl'],
+    fontWeight: Typography.fontWeight.bold as TextStyle['fontWeight'],
+    color: Colors.textPrimary,
+    marginBottom: Spacing.sm,
   },
   headerSubtitle: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: Typography.fontSize.base,
+    color: Colors.textSecondary,
   },
   content: {
     flex: 1,
   },
   timeRangeContainer: {
     flexDirection: 'row',
-    margin: 20,
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 4,
+    margin: Spacing.xl,
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.xs,
+    justifyContent: 'space-between',
   },
   timeRangeButton: {
     flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderRadius: 8,
+    marginHorizontal: Spacing.xs,
   },
   timeRangeButtonActive: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: Colors.primary,
   },
   timeRangeText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#666',
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.medium as TextStyle['fontWeight'],
+    color: Colors.textSecondary,
   },
   timeRangeTextActive: {
-    color: 'white',
+    color: Colors.white,
   },
   section: {
-    padding: 20,
+    padding: Spacing.xl,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
+    fontSize: Typography.fontSize.lg,
+    fontWeight: Typography.fontWeight.bold as TextStyle['fontWeight'],
+    color: Colors.textPrimary,
     marginBottom: 16,
   },
-  statsContainer: {
-    paddingHorizontal: 20,
+  statsGrid: {
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.base,
   },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 12,
+  statCardGrid: {
+    minHeight: 100,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   statCard: {
     backgroundColor: 'white',
     borderRadius: 16,
     padding: 20,
-    flex: 1,
     alignItems: 'center',
+    flex: 1,
+    marginHorizontal: 6,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
@@ -356,52 +365,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666',
   },
-  achievementsContainer: {
-    flexDirection: 'row',
-    gap: 16,
-    paddingRight: 20,
-  },
-  achievementCard: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 16,
-    width: 160,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  achievementIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  achievementTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#333',
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  achievementDescription: {
-    fontSize: 12,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  achievementDate: {
-    fontSize: 10,
-    color: '#999',
-  },
+
   goalCard: {
     backgroundColor: 'white',
     borderRadius: 16,
     padding: 20,
+    marginHorizontal: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   goalHeader: {
     flexDirection: 'row',

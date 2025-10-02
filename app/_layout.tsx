@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Slot, Stack } from "expo-router";
+import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { StyleSheet } from "react-native";
@@ -7,6 +7,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { WalkingProvider } from "@/contexts/WalkingContext";
+import { SettingsProvider } from "@/contexts/SettingsContext";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -32,9 +33,11 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <GestureHandlerRootView style={styles.gestureHandler}>
             <AuthProvider>
-              <WalkingProvider>
-                <RootLayoutNav />
-              </WalkingProvider>
+              <SettingsProvider>
+                <WalkingProvider>
+                  <RootLayoutNav />
+                </WalkingProvider>
+              </SettingsProvider>
             </AuthProvider>
         </GestureHandlerRootView>
       </SafeAreaProvider>
@@ -47,3 +50,4 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
+// Removed unused Slot import per lint warning

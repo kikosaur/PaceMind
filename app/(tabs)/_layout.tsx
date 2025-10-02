@@ -1,60 +1,64 @@
 import { Tabs } from "expo-router";
 import React from "react";
-import { Home, Footprints, Calendar, TrendingUp, Settings } from 'lucide-react-native';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
+import { StatusBar } from "expo-status-bar";
 
 export default function TabLayout() {
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: '#4CAF50',
-        tabBarInactiveTintColor: '#666',
-        headerShown: false,
-        tabBarStyle: {
-          backgroundColor: 'white',
-          borderTopWidth: 1,
-          borderTopColor: '#E5E5E5',
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '500',
-        },
-      }}
-    >
-      <Tabs.Screen
-        name="home"
-        options={{
-          title: "Home",
-          tabBarIcon: ({ color, size }) => <Home color={color} size={size} />,
+    <>
+      <StatusBar style="dark" backgroundColor="transparent" translucent />
+      <Tabs
+        screenOptions={{
+          tabBarActiveTintColor: '#4CAF50',
+          tabBarInactiveTintColor: '#666',
+          headerShown: false,
+          tabBarStyle: {
+            backgroundColor: 'white',
+            borderTopWidth: 1,
+            borderTopColor: '#E5E5E5',
+          },
+          tabBarLabelStyle: {
+            fontSize: 12,
+            fontWeight: '500',
+          },
         }}
-      />
-      <Tabs.Screen
-        name="walk"
-        options={{
-          title: "Walk",
-          tabBarIcon: ({ color, size }) => <Footprints color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="journal"
-        options={{
-          title: "Journal",
-          tabBarIcon: ({ color, size }) => <Calendar color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="progress"
-        options={{
-          title: "Progress",
-          tabBarIcon: ({ color, size }) => <TrendingUp color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: "Settings",
-          tabBarIcon: ({ color, size }) => <Settings color={color} size={size} />,
-        }}
-      />
-    </Tabs>
+      >
+        <Tabs.Screen
+          name="home"
+          options={{
+            title: "Home",
+            tabBarIcon: ({ color, size }) => <Ionicons name="home" color={color} size={size} />,
+          }}
+        />
+        <Tabs.Screen
+          name="walk"
+          options={{
+            title: "Walk",
+            tabBarIcon: ({ color, size }) => <FontAwesome5 name="walking" color={color} size={size} />,
+          }}
+        />
+        <Tabs.Screen
+          name="journal"
+          options={{
+            title: "Journal",
+            tabBarIcon: ({ color, size }) => <Ionicons name="calendar" color={color} size={size} />,
+          }}
+        />
+        <Tabs.Screen
+          name="progress"
+          options={{
+            title: "Progress",
+            tabBarIcon: ({ color, size }) => <Ionicons name="trending-up" color={color} size={size} />,
+          }}
+        />
+        <Tabs.Screen
+          name="settings"
+          options={{
+            title: "Settings",
+            tabBarIcon: ({ color, size }) => <Ionicons name="settings" color={color} size={size} />,
+          }}
+        />
+      </Tabs>
+    </>
   );
 }

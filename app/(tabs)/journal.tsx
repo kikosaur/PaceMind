@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,11 +6,13 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  Platform,
+  ToastAndroid,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useWalking } from '@/contexts/WalkingContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Smile, Meh, Frown, Battery, Calendar, Plus } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 type MoodType = 'happy' | 'neutral' | 'sad';
 type EnergyLevel = 1 | 2 | 3 | 4 | 5;
@@ -21,14 +23,15 @@ export default function JournalScreen() {
   const [motivation, setMotivation] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   
   const { addJournalEntry, journalEntries } = useWalking();
   const insets = useSafeAreaInsets();
 
   const moodOptions = [
-    { type: 'happy' as MoodType, icon: Smile, color: '#4CAF50', label: 'Happy' },
-    { type: 'neutral' as MoodType, icon: Meh, color: '#FF9800', label: 'Neutral' },
-    { type: 'sad' as MoodType, icon: Frown, color: '#F44336', label: 'Sad' },
+    { type: 'happy' as MoodType, icon: Ionicons, iconName: 'happy-outline' as keyof typeof Ionicons.glyphMap, color: '#4CAF50', label: 'Happy' },
+    { type: 'neutral' as MoodType, icon: Ionicons, iconName: 'remove-circle-outline' as keyof typeof Ionicons.glyphMap, color: '#FF9800', label: 'Neutral' },
+    { type: 'sad' as MoodType, icon: Ionicons, iconName: 'sad-outline' as keyof typeof Ionicons.glyphMap, color: '#F44336', label: 'Sad' },
   ];
 
   const handleSubmit = async () => {
@@ -52,13 +55,27 @@ export default function JournalScreen() {
       setMotivation(null);
       setNotes('');
 
-      console.log('Journal entry saved!');
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Journal entry saved!', ToastAndroid.SHORT);
+      } else {
+        setToast({ type: 'success', message: 'Journal entry saved!' });
+      }
     } catch {
-      console.log('Failed to save journal entry');
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Failed to save entry', ToastAndroid.SHORT);
+      } else {
+        setToast({ type: 'error', message: 'Failed to save entry' });
+      }
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const renderMoodSelector = () => (
     <View style={styles.section}>
@@ -78,6 +95,7 @@ export default function JournalScreen() {
               onPress={() => setSelectedMood(mood.type)}
             >
               <IconComponent 
+                name={mood.iconName}
                 color={isSelected ? 'white' : mood.color} 
                 size={32} 
               />
@@ -107,7 +125,8 @@ export default function JournalScreen() {
             ]}
             onPress={() => setEnergyLevel(level as EnergyLevel)}
           >
-            <Battery 
+            <Ionicons
+            name="battery-full" 
               color={energyLevel === level ? 'white' : '#4CAF50'} 
               size={24} 
             />
@@ -160,7 +179,7 @@ export default function JournalScreen() {
       {journalEntries.slice(0, 3).map((entry, index) => (
         <View key={`entry-${entry.timestamp}-${index}`} style={styles.entryCard}>
           <View style={styles.entryHeader}>
-            <Calendar color="#666" size={16} />
+            <Ionicons name="calendar" color="#666" size={16} />
             <Text style={styles.entryDate}>
               {new Date(entry.timestamp).toDateString()}
             </Text>
@@ -180,13 +199,10 @@ export default function JournalScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <LinearGradient
-        colors={['#667eea', '#764ba2']}
-        style={styles.header}
-      >
+      <View style={styles.header}>
         <Text style={styles.headerTitle}>Mood Journal</Text>
         <Text style={styles.headerSubtitle}>Track your daily motivation</Text>
-      </LinearGradient>
+      </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {renderMoodSelector()}
@@ -216,7 +232,7 @@ export default function JournalScreen() {
             colors={['#4CAF50', '#45a049']}
             style={styles.submitButtonGradient}
           >
-            <Plus color="white" size={20} />
+            <Ionicons name="add" color="white" size={20} />
             <Text style={styles.submitButtonText}>
               {isSubmitting ? 'Saving...' : 'Save Entry'}
             </Text>
@@ -225,6 +241,18 @@ export default function JournalScreen() {
 
         {journalEntries.length > 0 && renderRecentEntries()}
       </ScrollView>
+
+      {/* Cross-platform lightweight toast for iOS/web */}
+      {toast && Platform.OS !== 'android' && (
+        <View
+          style={[
+            styles.toast,
+            { backgroundColor: toast.type === 'success' ? '#2e7d32' : '#c62828' },
+          ]}
+        >
+          <Text style={styles.toastText}>{toast.message}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -235,20 +263,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f9fa',
   },
   header: {
+    backgroundColor: '#f8f9fa',
     paddingTop: 20,
     paddingBottom: 30,
     paddingHorizontal: 20,
     alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8F5E8',
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: 'white',
+    color: '#333',
     marginBottom: 8,
   },
   headerSubtitle: {
     fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: '#666',
   },
   content: {
     flex: 1,
@@ -346,6 +377,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   submitButtonGradient: {
+    backgroundColor: '#4CAF50',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -360,11 +392,17 @@ const styles = StyleSheet.create({
   },
   entryCard: {
     backgroundColor: 'white',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
     marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E5E5E5',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   entryHeader: {
     flexDirection: 'row',
@@ -389,6 +427,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     lineHeight: 20,
+  },
+  toast: {
+    position: 'absolute',
+    bottom: 24,
+    left: 20,
+    right: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  toastText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 
