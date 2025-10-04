@@ -29,7 +29,6 @@ PaceMind transforms walking into an engaging, data-driven experience by providin
 
 ### Prerequisites
 - **Node.js** 18.0.0 or higher ([Install with nvm](https://github.com/nvm-sh/nvm))
-- **Bun** package manager ([Installation Guide](https://bun.sh/docs/installation))
 - **Expo CLI** (installed automatically with dependencies)
 - **iOS Simulator** (macOS) or **Android Emulator** for testing
 
@@ -43,7 +42,7 @@ PaceMind transforms walking into an engaging, data-driven experience by providin
 
 2. **Install Dependencies**
    ```bash
-   bun install
+   npm install
    ```
 
 3. **Environment Configuration**
@@ -57,25 +56,25 @@ PaceMind transforms walking into an engaging, data-driven experience by providin
 4. **Start Development Server**
    ```bash
    # Web preview (recommended for initial testing)
-   bun run web
+   npm run web
    
    # Mobile development server
-   bun run start
+   npm run start
    
    # Platform-specific
-   bun run ios     # iOS Simulator
-   bun run android # Android Emulator
+   npm run ios     # iOS Simulator
+   npm run android # Android Emulator
    ```
 
 ### Testing on Device
 
 **Mobile Testing (Recommended)**
 1. Install [Expo Go](https://expo.dev/client) on your device
-2. Run `bun run start`
+2. Run `npm run start`
 3. Scan the QR code with your device camera
 
 **Web Testing**
-- Access `http://localhost:8081` after running `bun run web`
+- Access `http://localhost:8081` after running `npm run web`
 - Note: Some native features may be limited in web preview
 
 ## ⚙️ Configuration
