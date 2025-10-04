@@ -1,6 +1,6 @@
-# 🌿 WalkWise: Fitness Walking App with Mood Journal for Intrinsic Growth
+# 🌿 PaceMind: Fitness Walking App with Mood Journal for Intrinsic Growth
 
-**WalkWise** is a holistic fitness and wellness app that blends **walking activity tracking** with a **mood journaling system** — helping users grow intrinsically through mindfulness and consistent effort.
+**PaceMind** is a holistic fitness and wellness app that blends **walking activity tracking** with a **mood journaling system** — helping users grow intrinsically through mindfulness and consistent effort.
 
 This project focuses not on external validation or badges, but on building **discipline**, **self-awareness**, and **inner motivation** through walking.
 
@@ -97,4 +97,4 @@ By combining sensor-based walking data with mood reflections, users can visualiz
 
 ---
 
-This is for academic purposes only.
+This project is for academic purposes only.
