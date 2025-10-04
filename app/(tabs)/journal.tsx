@@ -8,9 +8,10 @@ import {
   TextInput,
   Platform,
   ToastAndroid,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useWalking } from '@/contexts/WalkingContext';
+import { useWalking, JournalEntry } from '@/contexts/WalkingContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -24,8 +25,16 @@ export default function JournalScreen() {
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [showPrediction, setShowPrediction] = useState(false);
   
-  const { addJournalEntry, journalEntries } = useWalking();
+  const { 
+    addJournalEntry, 
+    journalEntries, 
+    predictMotivation, 
+    motivationPrediction, 
+    motivationPredictionLoading,
+    motivationPredictionError 
+  } = useWalking();
   const insets = useSafeAreaInsets();
 
   const moodOptions = [
@@ -60,6 +69,13 @@ export default function JournalScreen() {
       } else {
         setToast({ type: 'success', message: 'Journal entry saved!' });
       }
+
+      // Show motivation prediction after successful journal entry
+      setShowPrediction(true);
+      
+      // Trigger motivation prediction (this will use the new journal entry)
+      await predictMotivation(true);
+      
     } catch {
       if (Platform.OS === 'android') {
         ToastAndroid.show('Failed to save entry', ToastAndroid.SHORT);
@@ -81,7 +97,7 @@ export default function JournalScreen() {
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>How are you feeling?</Text>
       <View style={styles.moodContainer}>
-        {moodOptions.map((mood) => {
+        {moodOptions.map((mood: typeof moodOptions[0]) => {
           const IconComponent = mood.icon;
           const isSelected = selectedMood === mood.type;
           
@@ -116,7 +132,7 @@ export default function JournalScreen() {
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Energy Level</Text>
       <View style={styles.energyContainer}>
-        {[1, 2, 3, 4, 5].map((level) => (
+        {[1, 2, 3, 4, 5].map((level: number) => (
           <TouchableOpacity
             key={level}
             style={[
@@ -148,7 +164,7 @@ export default function JournalScreen() {
         Motivation to Walk: {motivation !== null ? `${motivation}%` : 'Not set'}
       </Text>
       <View style={styles.sliderContainer}>
-        {[0, 25, 50, 75, 100].map((value) => (
+        {[0, 25, 50, 75, 100].map((value: number) => (
           <TouchableOpacity
             key={value}
             style={[
@@ -176,7 +192,7 @@ export default function JournalScreen() {
   const renderRecentEntries = () => (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Recent Entries</Text>
-      {journalEntries.slice(0, 3).map((entry, index) => (
+      {journalEntries.slice(0, 3).map((entry: JournalEntry, index: number) => (
         <View key={`entry-${entry.timestamp}-${index}`} style={styles.entryCard}>
           <View style={styles.entryHeader}>
             <Ionicons name="calendar" color="#666" size={16} />
@@ -196,6 +212,80 @@ export default function JournalScreen() {
       ))}
     </View>
   );
+
+  const renderMotivationPrediction = () => {
+    if (!showPrediction) return null;
+
+    return (
+      <View style={styles.section}>
+        <View style={styles.predictionHeader}>
+          <Ionicons name="bulb" color="#FF9800" size={20} />
+          <Text style={styles.sectionTitle}>AI Motivation Insights</Text>
+          <TouchableOpacity 
+            onPress={() => setShowPrediction(false)}
+            style={styles.closeButton}
+          >
+            <Ionicons name="close" color="#666" size={20} />
+          </TouchableOpacity>
+        </View>
+
+        {motivationPredictionLoading && (
+          <View style={styles.predictionCard}>
+            <ActivityIndicator size="small" color="#4CAF50" />
+            <Text style={styles.predictionLoadingText}>
+              Analyzing your motivation patterns...
+            </Text>
+          </View>
+        )}
+
+        {motivationPredictionError && (
+          <View style={[styles.predictionCard, styles.predictionErrorCard]}>
+            <Ionicons name="warning" color="#F44336" size={20} />
+            <Text style={styles.predictionErrorText}>
+              Unable to generate insights right now. Please try again later.
+            </Text>
+          </View>
+        )}
+
+        {motivationPrediction && !motivationPredictionLoading && (
+          <View style={styles.predictionCard}>
+            <View style={styles.predictionContent}>
+              <View style={styles.predictionRow}>
+                <Text style={styles.predictionLabel}>Predicted State:</Text>
+                <View style={[
+                  styles.predictionBadge,
+                  { backgroundColor: motivationPrediction.motivation_state === 'high' ? '#4CAF50' : '#FF9800' }
+                ]}>
+                  <Text style={styles.predictionBadgeText}>
+                    {motivationPrediction.motivation_state?.toUpperCase() || 'UNKNOWN'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.predictionRow}>
+                <Text style={styles.predictionLabel}>Confidence:</Text>
+                <Text style={styles.predictionValue}>
+                  {motivationPrediction.confidence ? `${Math.round(motivationPrediction.confidence * 100)}%` : 'N/A'}
+                </Text>
+              </View>
+
+              {motivationPrediction.recommendations && motivationPrediction.recommendations.length > 0 && (
+                <View style={styles.recommendationsContainer}>
+                  <Text style={styles.recommendationsTitle}>Recommendations:</Text>
+                  {motivationPrediction.recommendations.slice(0, 2).map((rec: string, index: number) => (
+                    <View key={index} style={styles.recommendationItem}>
+                      <Ionicons name="checkmark-circle" color="#4CAF50" size={16} />
+                      <Text style={styles.recommendationText}>{rec}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+      </View>
+    );
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -238,6 +328,8 @@ export default function JournalScreen() {
             </Text>
           </LinearGradient>
         </TouchableOpacity>
+
+        {renderMotivationPrediction()}
 
         {journalEntries.length > 0 && renderRecentEntries()}
       </ScrollView>
@@ -448,6 +540,97 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 14,
     fontWeight: '600',
+  },
+  predictionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  closeButton: {
+    padding: 4,
+  },
+  predictionCard: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  predictionErrorCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#F44336',
+  },
+  predictionLoadingText: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
+  },
+  predictionErrorText: {
+    fontSize: 14,
+    color: '#F44336',
+    flex: 1,
+  },
+  predictionContent: {
+    flex: 1,
+  },
+  predictionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  predictionLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+  },
+  predictionValue: {
+    fontSize: 14,
+    color: '#666',
+  },
+  predictionBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  predictionBadgeText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  recommendationsContainer: {
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E5E5',
+  },
+  recommendationsTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+  },
+  recommendationItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 6,
+    gap: 8,
+  },
+  recommendationText: {
+    fontSize: 13,
+    color: '#666',
+    flex: 1,
+    lineHeight: 18,
   },
 });
 

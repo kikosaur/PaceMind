@@ -4,6 +4,14 @@ import { useAuth } from './AuthContext';
 import { startWalkingSync, updateWalkingSession, completeWalkingSession } from '../lib/realtime-sync';
 import { DataCleanupManager, CLEANUP_CONFIGS, createArrayCleanupCallback } from '../utils/dataCleanup';
 import { v4 as uuidv4 } from 'uuid';
+import { 
+  getEnhancedWalkingManager, 
+  EnhancedWalkingSession, 
+  EnhancedMetrics,
+  EnhancedWalkingContextManager 
+} from '../lib/enhanced-walking-context';
+import { QualityReport } from '../lib/data-quality-monitor';
+import { MotivationService, MotivationPredictionResponse, MotivationTrendData } from '../lib/motivation-service';
 
 // Re-export types from activity-tracking
 export { ActivityMetrics, ActivitySplit } from '../lib/activity-tracking';
@@ -80,6 +88,25 @@ export type WalkingState = {
   
   // Journal
   journalEntries: JournalEntry[];
+  
+  // Enhanced metrics state
+  enhancedMetrics: EnhancedMetrics | null;
+  qualityReport: QualityReport | null;
+  dataQualityScore: number;
+  isEnhancedMode: boolean;
+  
+  // ML Motivation Prediction state
+  motivationPrediction: MotivationPredictionResponse | null;
+  motivationTrendData: MotivationTrendData[] | null;
+  isLoadingPrediction: boolean;
+  predictionError: string | null;
+  lastPredictionUpdate: number | null;
+  
+  // Additional motivation properties
+  motivationPredictionLoading: boolean;
+  motivationPredictionError: string | null;
+  motivationTrendLoading: boolean;
+  motivationTrendError: string | null;
 };
 
 // Action types
@@ -97,7 +124,16 @@ type WalkingAction =
   | { type: 'ADD_JOURNAL_ENTRY'; payload: { entry: JournalEntry } }
   | { type: 'SET_ROUTE_POINTS'; payload: RoutePoint[] }
   | { type: 'SET_JOURNAL_ENTRIES'; payload: JournalEntry[] }
-  | { type: 'SET_SPLITS'; payload: Split[] };
+  | { type: 'SET_SPLITS'; payload: Split[] }
+  | { type: 'SET_ENHANCED_METRICS'; payload: { metrics: EnhancedMetrics } }
+  | { type: 'SET_QUALITY_REPORT'; payload: { report: QualityReport } }
+  | { type: 'TOGGLE_ENHANCED_MODE' }
+  | { type: 'UPDATE_DATA_QUALITY_SCORE'; payload: { score: number } }
+  | { type: 'SET_MOTIVATION_PREDICTION'; payload: { prediction: MotivationPredictionResponse } }
+  | { type: 'SET_MOTIVATION_TREND_DATA'; payload: { trendData: MotivationTrendData[] } }
+  | { type: 'SET_PREDICTION_LOADING'; payload: { isLoading: boolean } }
+  | { type: 'SET_PREDICTION_ERROR'; payload: { error: string | null } }
+  | { type: 'UPDATE_PREDICTION_TIMESTAMP'; payload: { timestamp: number } };
 
 // Context type
 export type WalkingContextType = {
@@ -120,6 +156,25 @@ export type WalkingContextType = {
   // Journal
   journalEntries: JournalEntry[];
   
+  // Enhanced metrics properties
+  enhancedMetrics: EnhancedMetrics | null;
+  qualityReport: QualityReport | null;
+  dataQualityScore: number;
+  isEnhancedMode: boolean;
+  
+  // ML Motivation Prediction properties
+  motivationPrediction: MotivationPredictionResponse | null;
+  motivationTrendData: MotivationTrendData[] | null;
+  isLoadingPrediction: boolean;
+  predictionError: string | null;
+  lastPredictionUpdate: number | null;
+  
+  // Additional motivation properties
+  motivationPredictionLoading: boolean;
+  motivationPredictionError: string | null;
+  motivationTrendLoading: boolean;
+  motivationTrendError: string | null;
+  
   // Actions
   startWalk: () => void;
   pauseWalk: () => void;
@@ -131,6 +186,18 @@ export type WalkingContextType = {
   resetRoute: () => void;
   saveCurrentWalk: () => Promise<boolean>;
   addJournalEntry: (entry: JournalEntry) => Promise<void>;
+  
+  // Enhanced methods
+  toggleEnhancedMode: () => void;
+  performCalibration: () => Promise<void>;
+  getQualityReport: () => QualityReport | null;
+  getMetricsHistory: () => EnhancedMetrics[];
+  
+  // ML Motivation Prediction methods
+  predictMotivation: (forceRefresh?: boolean) => Promise<void>;
+  getMotivationInsights: () => string[];
+  getMotivationRecommendations: () => string[];
+  refreshMotivationTrend: () => Promise<void>;
 };
 
 // Helper functions
@@ -218,7 +285,26 @@ const initialState: WalkingState = {
   motivationTrend: [],
   
   // Journal
-  journalEntries: []
+  journalEntries: [],
+  
+  // Enhanced metrics
+  enhancedMetrics: null,
+  qualityReport: null,
+  dataQualityScore: 0.8, // Default quality score
+  isEnhancedMode: false,
+  
+  // ML Motivation Prediction state
+  motivationPrediction: null,
+  motivationTrendData: null,
+  isLoadingPrediction: false,
+  predictionError: null,
+  lastPredictionUpdate: null,
+  
+  // Additional motivation properties
+  motivationPredictionLoading: false,
+  motivationPredictionError: null,
+  motivationTrendLoading: false,
+  motivationTrendError: null
 };
 
 // Reducer
@@ -395,7 +481,73 @@ const walkingReducer = (state: WalkingState, action: WalkingAction): WalkingStat
         splits: action.payload
       };
     }
-    
+
+    case 'SET_ENHANCED_METRICS': {
+      return {
+        ...state,
+        enhancedMetrics: action.payload.metrics
+      };
+    }
+
+    case 'SET_QUALITY_REPORT': {
+      return {
+        ...state,
+        qualityReport: action.payload.report
+      };
+    }
+
+    case 'TOGGLE_ENHANCED_MODE': {
+      return {
+        ...state,
+        isEnhancedMode: !state.isEnhancedMode
+      };
+    }
+
+    case 'UPDATE_DATA_QUALITY_SCORE': {
+      return {
+        ...state,
+        dataQualityScore: action.payload.score
+      };
+    }
+
+    case 'SET_MOTIVATION_PREDICTION': {
+      return {
+        ...state,
+        motivationPrediction: action.payload.prediction,
+        predictionError: null,
+        lastPredictionUpdate: Date.now()
+      };
+    }
+
+    case 'SET_MOTIVATION_TREND_DATA': {
+      return {
+        ...state,
+        motivationTrendData: action.payload.trendData
+      };
+    }
+
+    case 'SET_PREDICTION_LOADING': {
+      return {
+        ...state,
+        isLoadingPrediction: action.payload.isLoading
+      };
+    }
+
+    case 'SET_PREDICTION_ERROR': {
+      return {
+        ...state,
+        predictionError: action.payload.error,
+        isLoadingPrediction: false
+      };
+    }
+
+    case 'UPDATE_PREDICTION_TIMESTAMP': {
+      return {
+        ...state,
+        lastPredictionUpdate: action.payload.timestamp
+      };
+    }
+
     default:
       return state;
   }
@@ -415,8 +567,33 @@ export const useWalking = (): WalkingContextType => {
 
 // Provider component
 export const WalkingProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [state, dispatch] = useReducer(walkingReducer, initialState);
   const { user } = useAuth();
+  const [state, dispatch] = useReducer(walkingReducer, initialState);
+  
+  // Enhanced walking manager
+  const enhancedManagerRef = useRef<EnhancedWalkingContextManager | null>(null);
+  
+  // Motivation service
+  const motivationServiceRef = useRef<MotivationService | null>(null);
+  
+  // Initialize enhanced manager
+  useEffect(() => {
+    if (user && !enhancedManagerRef.current) {
+      enhancedManagerRef.current = getEnhancedWalkingManager();
+    }
+  }, [user]);
+  
+  // Initialize motivation service
+  useEffect(() => {
+    if (user && !motivationServiceRef.current) {
+      motivationServiceRef.current = new MotivationService({
+        apiBaseUrl: 'http://localhost:8000', // TODO: Make this configurable
+        cacheExpiry: 30 * 60 * 1000, // 30 minutes
+        retryAttempts: 3,
+        timeout: 10000 // 10 seconds
+      });
+    }
+  }, [user]);
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   
   // Data cleanup manager
@@ -599,6 +776,61 @@ export const WalkingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.warn('Failed to fetch walking stats:', error);
     }
   }, [user?.id]);
+
+  // Enhanced methods
+  const toggleEnhancedMode = useCallback(() => {
+    dispatch({ type: 'TOGGLE_ENHANCED_MODE' });
+  }, []);
+
+  const performCalibration = useCallback(async () => {
+    if (!enhancedManagerRef.current) return;
+    
+    try {
+      await enhancedManagerRef.current.performManualCalibration();
+      // Update quality report after calibration
+      const report = enhancedManagerRef.current.getLatestQualityReport();
+      if (report) {
+        dispatch({ type: 'SET_QUALITY_REPORT', payload: { report } });
+        dispatch({ type: 'UPDATE_DATA_QUALITY_SCORE', payload: { score: report.overallScore } });
+      }
+    } catch (error) {
+      console.error('Calibration failed:', error);
+    }
+  }, []);
+
+  const getQualityReport = useCallback(() => {
+    return state.qualityReport;
+  }, [state.qualityReport]);
+
+  const getMetricsHistory = useCallback(() => {
+    if (!enhancedManagerRef.current) return [];
+    return enhancedManagerRef.current.getMetricsHistory();
+  }, []);
+
+  // Enhanced metrics processing
+  useEffect(() => {
+    if (!state.isEnhancedMode || !enhancedManagerRef.current || !state.currentSession) return;
+
+    const processEnhancedMetrics = async () => {
+      try {
+        const enhancedSession = await enhancedManagerRef.current!.enhanceWalkingSession(state.currentSession!, state.routePoints);
+        const metrics = enhancedSession.enhancedMetrics;
+        const report = enhancedManagerRef.current!.getLatestQualityReport();
+
+        if (metrics) {
+          dispatch({ type: 'SET_ENHANCED_METRICS', payload: { metrics } });
+        }
+        if (report) {
+          dispatch({ type: 'SET_QUALITY_REPORT', payload: { report } });
+          dispatch({ type: 'UPDATE_DATA_QUALITY_SCORE', payload: { score: report.overallScore } });
+        }
+      } catch (error) {
+        console.error('Enhanced metrics processing failed:', error);
+      }
+    };
+
+    processEnhancedMetrics();
+  }, [state.currentSession, state.isEnhancedMode]);
 
   // Load stats on mount and user change
   useEffect(() => {
@@ -818,8 +1050,143 @@ export const WalkingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         motivation_level: Math.round(entry.motivation / 20),
         notes: entry.notes || null
       });
+      
+      // Trigger motivation prediction update after journal entry
+      if (motivationServiceRef.current) {
+        await predictMotivation(true);
+      }
     } catch (error) {
       console.warn('Failed to save journal entry:', error);
+    }
+  }, [user?.id]);
+
+  // Motivation prediction methods
+  const predictMotivation = useCallback(async (forceRefresh: boolean = false) => {
+    if (!motivationServiceRef.current || !user?.id) return;
+    
+    // Check if we need to refresh
+    const now = Date.now();
+    const lastUpdate = state.lastPredictionUpdate;
+    const cacheExpired = !lastUpdate || (now - lastUpdate) > (30 * 60 * 1000); // 30 minutes
+    
+    if (!forceRefresh && !cacheExpired && state.motivationPrediction) {
+      return;
+    }
+    
+    dispatch({ type: 'SET_PREDICTION_LOADING', payload: { isLoading: true } });
+    dispatch({ type: 'SET_PREDICTION_ERROR', payload: { error: null } });
+    
+    try {
+      const prediction = await motivationServiceRef.current.predictMotivation(
+        state.currentSession,
+        state.journalEntries,
+        {
+          todayStats: state.todayStats,
+          weeklyStats: state.weeklyStats,
+          monthlyStats: state.monthlyStats
+        },
+        user?.id
+      );
+      
+      dispatch({ type: 'SET_MOTIVATION_PREDICTION', payload: { prediction } });
+      dispatch({ type: 'UPDATE_PREDICTION_TIMESTAMP', payload: { timestamp: now } });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to predict motivation';
+      dispatch({ type: 'SET_PREDICTION_ERROR', payload: { error: errorMessage } });
+      console.error('Motivation prediction failed:', error);
+    } finally {
+      dispatch({ type: 'SET_PREDICTION_LOADING', payload: { isLoading: false } });
+    }
+  }, [state.currentSession, state.journalEntries, state.todayStats, state.weeklyStats, state.monthlyStats, state.lastPredictionUpdate, state.motivationPrediction, user?.id]);
+
+  const getMotivationInsights = useCallback((): string[] => {
+    if (!state.motivationPrediction) return [];
+    
+    const insights: string[] = [];
+    const prediction = state.motivationPrediction;
+    
+    // Convert motivation_state to numeric value for display
+    const motivationLevel = prediction.motivation_state === 'high' ? 80 : 
+                           prediction.motivation_state === 'medium' ? 60 : 40;
+    
+    // Add insights based on prediction confidence
+    if (prediction.confidence > 0.8) {
+      insights.push(`High confidence prediction: ${motivationLevel}% motivation level (${prediction.motivation_state})`);
+    } else if (prediction.confidence > 0.6) {
+      insights.push(`Moderate confidence prediction: ${motivationLevel}% motivation level (${prediction.motivation_state})`);
+    } else {
+      insights.push(`Low confidence prediction: ${motivationLevel}% motivation level (${prediction.motivation_state})`);
+    }
+    
+    // Add insights from the prediction's insights
+    if (prediction.insights?.primaryFactors) {
+      prediction.insights.primaryFactors.forEach(factor => {
+        insights.push(`Key factor: ${factor}`);
+      });
+    }
+    
+    // Add trend analysis if available
+    if (prediction.insights?.trendAnalysis) {
+      insights.push(prediction.insights.trendAnalysis);
+    }
+    
+    return insights;
+  }, [state.motivationPrediction]);
+
+  const getMotivationRecommendations = useCallback((): string[] => {
+    if (!state.motivationPrediction) return [];
+    
+    const recommendations: string[] = [];
+    const prediction = state.motivationPrediction;
+    
+    // Add the main suggestion
+    if (prediction.suggestion) {
+      recommendations.push(prediction.suggestion);
+    }
+    
+    // Add recommendations from insights
+    if (prediction.insights?.recommendations) {
+      recommendations.push(...prediction.insights.recommendations);
+    }
+    
+    // Add additional recommendations from the top-level recommendations array
+    if (prediction.recommendations) {
+      recommendations.push(...prediction.recommendations);
+    }
+    
+    // Recommendations based on motivation state
+    if (prediction.motivation_state === 'low') {
+      recommendations.push('Consider a shorter, easier walk today');
+      recommendations.push('Try walking with a friend or listening to upbeat music');
+      recommendations.push('Set a small, achievable goal for today');
+    } else if (prediction.motivation_state === 'medium') {
+      recommendations.push('A moderate walk would be perfect today');
+      recommendations.push('Try exploring a new route to keep things interesting');
+      recommendations.push('Focus on enjoying the journey rather than distance');
+    } else {
+      recommendations.push('Great day for a longer or more challenging walk!');
+      recommendations.push('Consider setting a new personal record');
+      recommendations.push('This is a perfect time to push your limits');
+    }
+    
+    return recommendations;
+  }, [state.motivationPrediction]);
+
+  const refreshMotivationTrend = useCallback(async () => {
+    if (!motivationServiceRef.current || !user?.id) return;
+    
+    dispatch({ type: 'SET_PREDICTION_LOADING', payload: { isLoading: true } });
+    
+    try {
+      // Get recent predictions to generate trend data
+      const predictions: MotivationPredictionResponse[] = []; // This would come from stored predictions
+      const trendData = await motivationServiceRef.current.getMotivationTrend(predictions, user.id);
+      dispatch({ type: 'SET_MOTIVATION_TREND_DATA', payload: { trendData } });
+    } catch (error) {
+      console.error('Failed to refresh motivation trend:', error);
+      dispatch({ type: 'SET_PREDICTION_ERROR', payload: { error: 'Failed to refresh motivation trend' } });
+    } finally {
+      dispatch({ type: 'SET_PREDICTION_LOADING', payload: { isLoading: false } });
     }
   }, [user?.id]);
 
@@ -852,7 +1219,26 @@ export const WalkingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // Journal
     journalEntries: state.journalEntries,
     
-    // Actions
+    // Enhanced metrics properties
+    enhancedMetrics: state.enhancedMetrics,
+    qualityReport: state.qualityReport,
+    dataQualityScore: state.dataQualityScore,
+    isEnhancedMode: state.isEnhancedMode,
+    
+    // ML Motivation prediction properties
+    motivationPrediction: state.motivationPrediction,
+    motivationTrendData: state.motivationTrendData,
+    isLoadingPrediction: state.isLoadingPrediction,
+    predictionError: state.predictionError,
+    lastPredictionUpdate: state.lastPredictionUpdate,
+    
+    // Additional motivation properties
+    motivationPredictionLoading: state.motivationPredictionLoading,
+    motivationPredictionError: state.motivationPredictionError,
+    motivationTrendLoading: state.motivationTrendLoading,
+    motivationTrendError: state.motivationTrendError,
+    
+    // Existing methods
     startWalk,
     pauseWalk,
     resumeWalk,
@@ -862,7 +1248,19 @@ export const WalkingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     addRoutePoint,
     resetRoute,
     saveCurrentWalk,
-    addJournalEntry
+    addJournalEntry,
+    
+    // Enhanced methods
+    toggleEnhancedMode,
+    performCalibration,
+    getQualityReport,
+    getMetricsHistory,
+    
+    // ML Motivation prediction methods
+    predictMotivation,
+    getMotivationInsights,
+    getMotivationRecommendations,
+    refreshMotivationTrend
   };
 
   return (

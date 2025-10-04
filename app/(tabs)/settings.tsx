@@ -211,11 +211,11 @@ export default function SettingsScreen() {
         </View>
 
         {/* Settings Groups */}
-        {settingsGroups.map((group, groupIndex) => (
+        {settingsGroups.map((group: any, groupIndex: number) => (
           <View key={`group-${group.title}-${groupIndex}`} style={styles.settingsGroup}>
             <Text style={styles.groupTitle}>{group.title}</Text>
             <View style={styles.groupItems}>
-              {group.items.map((item, itemIndex) => renderSettingItem(item, `${group.title}-${itemIndex}`))}
+              {group.items.map((item: any, itemIndex: number) => renderSettingItem(item, `${group.title}-${itemIndex}`))}
             </View>
           </View>
         ))}

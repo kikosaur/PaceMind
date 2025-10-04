@@ -1,311 +1,798 @@
-# Welcome to your Rork app
+# PaceMind - AI-Powered Walking Companion
 
-## Project info
+**Version:** 1.1.0  
+**Platform:** Cross-platform mobile app (iOS, Android, Web)  
+**Framework:** React Native with Expo Router  
 
-This is a native cross-platform mobile app created with [Rork](https://rork.com)
+PaceMind is an intelligent walking companion app that combines GPS tracking, AI-powered motivation prediction, and comprehensive health analytics to help users maintain an active lifestyle. The app features real-time walking metrics, mood journaling, personalized insights, and machine learning-driven recommendations.
 
-**Platform**: Native iOS & Android app, exportable to web
-**Framework**: Expo Router + React Native
+## 🎯 Application Overview
 
-## How can I edit this code?
+### Core Purpose
+PaceMind transforms walking into an engaging, data-driven experience by providing:
+- **Real-time Activity Tracking**: GPS-based distance, pace, and route monitoring
+- **AI Motivation Prediction**: Machine learning models that predict and enhance user motivation
+- **Comprehensive Analytics**: Detailed performance metrics and progress tracking
+- **Mood & Energy Journaling**: Emotional state tracking with correlation analysis
+- **Personalized Insights**: Data-driven recommendations for improved walking habits
 
-There are several ways of editing your native mobile application.
+### Key Features
+- 🚶‍♂️ **Advanced Walking Tracking** with GPS accuracy optimization
+- 🧠 **AI-Powered Motivation System** using Random Forest ML models
+- 📊 **Performance Analytics** with KPI monitoring and trend analysis
+- 📝 **Mood Journaling** with energy level and motivation tracking
+- 🎯 **Goal Setting & Progress Monitoring** with customizable targets
+- 🔄 **Data Synchronization** via Supabase backend
+- 📱 **Cross-Platform Support** for iOS, Android, and Web
 
-### **Use Rork**
+## 🚀 Quick Start
 
-Simply visit [rork.com](https://rork.com) and prompt to build your app with AI.
+### Prerequisites
+- **Node.js** 18.0.0 or higher ([Install with nvm](https://github.com/nvm-sh/nvm))
+- **Bun** package manager ([Installation Guide](https://bun.sh/docs/installation))
+- **Expo CLI** (installed automatically with dependencies)
+- **iOS Simulator** (macOS) or **Android Emulator** for testing
 
-Changes made via Rork will be committed automatically to this GitHub repo.
+### Installation
 
-Whenever you make a change in your local code editor and push it to GitHub, it will be also reflected in Rork.
+1. **Clone the Repository**
+   ```bash
+   git clone https://github.com/your-username/pacemind-app.git
+   cd pacemind-app
+   ```
 
-### **Use your preferred code editor**
+2. **Install Dependencies**
+   ```bash
+   bun install
+   ```
 
-If you want to work locally using your own code editor, you can clone this repo and push changes. Pushed changes will also be reflected in Rork.
+3. **Environment Configuration**
+   ```bash
+   # Copy environment template
+   cp .env.example .env
+   
+   # Configure required variables (see Configuration section)
+   ```
 
-If you are new to coding and unsure which editor to use, we recommend Cursor. If you're familiar with terminals, try Claude Code.
+4. **Start Development Server**
+   ```bash
+   # Web preview (recommended for initial testing)
+   bun run web
+   
+   # Mobile development server
+   bun run start
+   
+   # Platform-specific
+   bun run ios     # iOS Simulator
+   bun run android # Android Emulator
+   ```
 
-The only requirement is having Node.js & Bun installed - [install Node.js with nvm](https://github.com/nvm-sh/nvm) and [install Bun](https://bun.sh/docs/installation)
+### Testing on Device
 
-Follow these steps:
+**Mobile Testing (Recommended)**
+1. Install [Expo Go](https://expo.dev/client) on your device
+2. Run `bun run start`
+3. Scan the QR code with your device camera
+
+**Web Testing**
+- Access `http://localhost:8081` after running `bun run web`
+- Note: Some native features may be limited in web preview
+
+## ⚙️ Configuration
+
+### Environment Variables
+
+Create a `.env` file in the project root:
+
+```env
+# Supabase Configuration (Required)
+EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+
+# ML API Configuration (Optional - fallback mode available)
+EXPO_PUBLIC_ML_API_URL=https://your-ml-api.railway.app
+
+# Development Configuration
+EXPO_PUBLIC_ENV=development
+EXPO_PUBLIC_DEBUG_MODE=true
+
+# Performance Monitoring (Optional)
+EXPO_PUBLIC_PERFORMANCE_MONITORING=true
+EXPO_PUBLIC_ANALYTICS_ENABLED=false
+```
+
+### Supabase Setup
+
+1. **Create Supabase Project**
+   - Visit [supabase.com](https://supabase.com)
+   - Create new project
+   - Note your project URL and anon key
+
+2. **Database Schema**
+   ```sql
+   -- Run in Supabase SQL Editor
+   -- See docs/supabase-setup.md for complete schema
+   
+   -- Users table (extends auth.users)
+   CREATE TABLE public.user_profiles (
+     id UUID REFERENCES auth.users PRIMARY KEY,
+     name TEXT,
+     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+   );
+   
+   -- Walking sessions
+   CREATE TABLE public.walking_sessions (
+     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+     user_id UUID REFERENCES auth.users NOT NULL,
+     start_time TIMESTAMP WITH TIME ZONE NOT NULL,
+     end_time TIMESTAMP WITH TIME ZONE,
+     distance DECIMAL(10,3),
+     steps INTEGER,
+     duration INTEGER,
+     calories_burned INTEGER,
+     status TEXT DEFAULT 'active'
+   );
+   
+   -- Motivation journal
+   CREATE TABLE public.motivation_journal (
+     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+     user_id UUID REFERENCES auth.users NOT NULL,
+     date DATE NOT NULL,
+     mood TEXT NOT NULL,
+     energy_level INTEGER CHECK (energy_level >= 1 AND energy_level <= 5),
+     motivation INTEGER CHECK (motivation >= 0 AND motivation <= 100),
+     notes TEXT
+   );
+   ```
+
+3. **Row Level Security (RLS)**
+   ```sql
+   -- Enable RLS on all tables
+   ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
+   ALTER TABLE public.walking_sessions ENABLE ROW LEVEL SECURITY;
+   ALTER TABLE public.motivation_journal ENABLE ROW LEVEL SECURITY;
+   
+   -- Create policies (users can only access their own data)
+   CREATE POLICY "Users can view own profile" ON public.user_profiles
+     FOR SELECT USING (auth.uid() = id);
+   
+   CREATE POLICY "Users can view own sessions" ON public.walking_sessions
+     FOR ALL USING (auth.uid() = user_id);
+   
+   CREATE POLICY "Users can view own journal" ON public.motivation_journal
+     FOR ALL USING (auth.uid() = user_id);
+   ```
+
+### ML API Setup (Optional)
+
+The app includes a FastAPI-based ML service for advanced motivation prediction:
+
+1. **Deploy ML API**
+   ```bash
+   cd ml-api
+   
+   # Railway deployment (recommended)
+   railway login
+   railway init
+   railway up
+   
+   # Or Docker deployment
+   docker build -t pacemind-ml-api .
+   docker run -p 8000:8000 pacemind-ml-api
+   ```
+
+2. **Update Environment**
+   ```env
+   EXPO_PUBLIC_ML_API_URL=https://your-ml-api.railway.app
+   ```
+
+## 📱 Usage Guidelines
+
+### Basic Workflow
+
+1. **User Registration/Login**
+   - Create account or sign in via Supabase Auth
+   - Complete profile setup with walking preferences
+
+2. **Start Walking Session**
+   - Navigate to Walk tab
+   - Tap "Start Walking" to begin GPS tracking
+   - Monitor real-time metrics (distance, pace, steps)
+
+3. **Journal Entry**
+   - After walking, record mood and energy levels
+   - Add optional notes about the session
+   - Receive AI-powered motivation insights
+
+4. **Progress Monitoring**
+   - View daily, weekly, and monthly statistics
+   - Track goal achievement and trends
+   - Analyze performance metrics and KPIs
+
+### Advanced Features
+
+**Performance Analytics**
+```typescript
+// Access performance data programmatically
+import { PerformanceMonitor } from '@/utils/performance';
+
+const monitor = PerformanceMonitor.getInstance();
+const metrics = await monitor.getPerformanceMetrics();
+const alerts = await monitor.getActiveAlerts();
+```
+
+**Custom Goal Setting**
+- Daily step targets (default: 10,000 steps)
+- Weekly distance goals (default: 25km)
+- Calorie burn objectives
+- Pace improvement targets
+
+**Data Export**
+```typescript
+// Export walking data
+import { useWalking } from '@/contexts/WalkingContext';
+
+const { exportWalkingData } = useWalking();
+const csvData = await exportWalkingData('csv', dateRange);
+```
+
+## 🏗️ Technical Specifications
+
+### System Requirements
+
+**Mobile Development**
+- **iOS**: iOS 13.0+ (iPhone 6s and newer)
+- **Android**: Android 7.0+ (API level 24)
+- **RAM**: Minimum 2GB, Recommended 4GB+
+- **Storage**: 100MB app size, 500MB for data
+
+**Development Environment**
+- **Node.js**: 18.0.0+
+- **Bun**: Latest stable version
+- **Expo SDK**: 53.0.23
+- **React Native**: 0.79.5
+- **TypeScript**: 5.8.3
+
+### Dependencies
+
+**Core Framework**
+```json
+{
+  "expo": "~53.0.23",
+  "react": "19.0.0",
+  "react-native": "0.79.5",
+  "expo-router": "~5.1.7"
+}
+```
+
+**Key Libraries**
+```json
+{
+  "@supabase/supabase-js": "^2.58.0",
+  "@tanstack/react-query": "^5.83.0",
+  "@react-native-async-storage/async-storage": "2.1.2",
+  "expo-location": "~18.1.6",
+  "expo-sensors": "~14.1.4",
+  "lucide-react-native": "^0.544.0",
+  "zustand": "^5.0.2"
+}
+```
+
+**Development Tools**
+```json
+{
+  "typescript": "~5.8.3",
+  "jest": "^30.2.0",
+  "@testing-library/react-native": "^13.3.3",
+  "eslint": "^9.31.0"
+}
+```
+
+### Architecture Overview
+
+```
+PaceMind App Architecture
+├── Frontend (React Native + Expo)
+│   ├── App Screens (/app)
+│   │   ├── Authentication (login, signup)
+│   │   ├── Main Tabs (home, walk, journal, progress, settings)
+│   │   └── Modals & Navigation
+│   ├── Components (/components)
+│   │   ├── Activity Metrics & Charts
+│   │   ├── Motivation Insights
+│   │   └── UI Components
+│   ├── Contexts (/contexts)
+│   │   ├── AuthContext (Supabase Auth)
+│   │   ├── WalkingContext (Activity State)
+│   │   └── SettingsContext (User Preferences)
+│   ├── Utils (/utils)
+│   │   ├── Performance Monitoring
+│   │   ├── Data Transformation
+│   │   └── Cache Management
+│   └── Tests (/__tests__)
+├── Backend Services
+│   ├── Supabase (Database + Auth)
+│   └── ML API (FastAPI + scikit-learn)
+└── Infrastructure
+    ├── Expo Application Services (EAS)
+    ├── Railway (ML API Hosting)
+    └── Supabase Cloud
+```
+
+### Performance Optimizations
+
+**GPS Accuracy Enhancement**
+- Kalman filtering for location smoothing
+- Dynamic accuracy thresholds based on conditions
+- Fallback to step-based distance calculation
+
+**Memory Management**
+- Automatic data cleanup for old sessions
+- Efficient state management with Zustand
+- Image optimization and lazy loading
+
+**Network Optimization**
+- Request batching and caching
+- Offline-first data synchronization
+- Compression for API communications
+
+## 🔌 API Reference
+
+### Walking Context API
+
+```typescript
+interface WalkingContextType {
+  // State
+  isWalking: boolean;
+  currentWalk: WalkingSession | null;
+  todayStats: DailyStats;
+  
+  // Actions
+  startWalk(): Promise<void>;
+  pauseWalk(): void;
+  resumeWalk(): void;
+  stopWalk(): Promise<void>;
+  
+  // Data
+  addJournalEntry(entry: JournalEntry): Promise<void>;
+  predictMotivation(force?: boolean): Promise<void>;
+  exportWalkingData(format: 'csv' | 'json'): Promise<string>;
+}
+```
+
+### Performance Monitor API
+
+```typescript
+interface PerformanceMonitor {
+  // Metrics
+  recordAPICall(endpoint: string, duration: number, success: boolean): void;
+  getPerformanceMetrics(): Promise<PerformanceMetrics>;
+  
+  // Alerts
+  getActiveAlerts(): Promise<PerformanceAlert[]>;
+  subscribeToAlerts(callback: (alert: PerformanceAlert) => void): void;
+  
+  // Optimization
+  getOptimizationRecommendations(): Promise<OptimizationRecommendation[]>;
+  exportMetrics(format: 'csv' | 'json'): Promise<string>;
+}
+```
+
+### ML API Endpoints
+
+**Health Check**
+```http
+GET /health
+Response: {
+  "status": "healthy",
+  "model_status": "loaded",
+  "timestamp": "2024-01-20T10:30:00"
+}
+```
+
+**Motivation Prediction**
+```http
+POST /predict
+Content-Type: application/json
+
+{
+  "walking": {
+    "steps": 8500,
+    "distance": 6.8,
+    "duration": 45,
+    "calories": 320,
+    "pace": 188.9
+  },
+  "context": {
+    "timeOfDay": "morning",
+    "weeklyProgress": 25.4,
+    "monthlyProgress": 98.2
+  },
+  "journal": {
+    "mood": "happy",
+    "energyLevel": 4,
+    "motivation": 75
+  }
+}
+
+Response: {
+  "motivation_state": "high",
+  "confidence": 0.85,
+  "suggestion": "Great energy! Consider extending your walk.",
+  "recommendations": ["Try morning walks for better motivation"]
+}
+```
+
+## 🧪 Testing
+
+### Test Suite Overview
 
 ```bash
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+# Run all tests
+bun run test
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+# Run with coverage
+bun run test:coverage
 
-# Step 3: Install the necessary dependencies.
-bun i
+# Run specific test suites
+bun run test:motivation
+bun run test -- --testPathPattern=performance
 
-# Step 4: Start the instant web preview of your Rork app in your browser, with auto-reloading of your changes
-bun run start-web
-
-# Step 5: Start iOS preview
-# Option A (recommended):
-bun run start  # then press "i" in the terminal to open iOS Simulator
-# Option B (if supported by your environment):
-bun run start -- --ios
+# Watch mode for development
+bun run test:watch
 ```
 
-### **Edit a file directly in GitHub**
+### Test Categories
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+**Unit Tests**
+- Context providers and hooks
+- Utility functions and data transformations
+- Component rendering and interactions
 
-## What technologies are used for this project?
+**Integration Tests**
+- API communication and error handling
+- Database operations and synchronization
+- ML model integration and fallback modes
 
-This project is built with the most popular native mobile cross-platform technical stack:
+**Performance Tests**
+- Memory usage and cleanup
+- GPS accuracy and battery optimization
+- Network request efficiency
 
-- **React Native** - Cross-platform native mobile development framework created by Meta and used for Instagram, Airbnb, and lots of top apps in the App Store
-- **Expo** - Extension of React Native + platform used by Discord, Shopify, Coinbase, Telsa, Starlink, Eightsleep, and more
-- **Expo Router** - File-based routing system for React Native with support for web, server functions and SSR
-- **TypeScript** - Type-safe JavaScript
-- **React Query** - Server state management
-- **Lucide React Native** - Beautiful icons
+### Coverage Requirements
 
-## How can I test my app?
-
-### **On your phone (Recommended)**
-
-1. **iOS**: Download the [Rork app from the App Store](https://apps.apple.com/app/rork) or [Expo Go](https://apps.apple.com/app/expo-go/id982107779)
-2. **Android**: Download the [Expo Go app from Google Play](https://play.google.com/store/apps/details?id=host.exp.exponent)
-3. Run `bun run start` and scan the QR code from your development server
-
-### **In your browser**
-
-Run `bun start-web` to test in a web browser. Note: The browser preview is great for quick testing, but some native features may not be available.
-
-### **iOS Simulator / Android Emulator**
-
-You can test Rork apps in Expo Go or Rork iOS app. You don't need XCode or Android Studio for most features.
-
-**When do you need Custom Development Builds?**
-
-- Native authentication (Face ID, Touch ID, Apple Sign In)
-- In-app purchases and subscriptions
-- Push notifications
-- Custom native modules
-
-Learn more: [Expo Custom Development Builds Guide](https://docs.expo.dev/develop/development-builds/introduction/)
-
-If you have XCode (iOS) or Android Studio installed:
-
-```bash
-# iOS Simulator
-bun run start -- --ios
-
-# Android Emulator
-bun run start -- --android
+```javascript
+// jest.config.js
+coverageThreshold: {
+  global: {
+    branches: 70,
+    functions: 70,
+    lines: 70,
+    statements: 70
+  }
+}
 ```
 
-## How can I deploy this project?
+## 🚀 Deployment
 
-### **Publish to App Store (iOS)**
+### Mobile App Deployment
 
-1. **Install EAS CLI**:
-
-   ```bash
-   bun i -g @expo/eas-cli
-   ```
-
-2. **Configure your project**:
-
-   ```bash
-   eas build:configure
-   ```
-
-3. **Build for iOS**:
-
-   ```bash
-   eas build --platform ios
-   ```
-
-4. **Submit to App Store**:
-   ```bash
-   eas submit --platform ios
-   ```
-
-For detailed instructions, visit [Expo's App Store deployment guide](https://docs.expo.dev/submit/ios/).
-
-### **Publish to Google Play (Android)**
-
-1. **Build for Android**:
-
-   ```bash
-   eas build --platform android
-   ```
-
-2. **Submit to Google Play**:
-   ```bash
-   eas submit --platform android
-   ```
-
-For detailed instructions, visit [Expo's Google Play deployment guide](https://docs.expo.dev/submit/android/).
-
-### **Publish as a Website**
-
-Your React Native app can also run on the web:
-
-1. **Build for web**:
-
-   ```bash
-   eas build --platform web
-   ```
-
-2. **Deploy with EAS Hosting**:
-   ```bash
-   eas hosting:configure
-   eas hosting:deploy
-   ```
-
-Alternative web deployment options:
-
-- **Vercel**: Deploy directly from your GitHub repository
-- **Netlify**: Connect your GitHub repo to Netlify for automatic deployments
-
-## App Features
-
-This template includes:
-
-- **Cross-platform compatibility** - Works on iOS, Android, and Web
-- **File-based routing** with Expo Router
-- **Tab navigation** with customizable tabs
-- **Modal screens** for overlays and dialogs
-- **TypeScript support** for better development experience
-- **Async storage** for local data persistence
-- **Vector icons** with Lucide React Native
-
-## Project Structure
-
-```
-├── app/                    # App screens (Expo Router)
-│   ├── (tabs)/            # Tab navigation screens
-│   │   ├── _layout.tsx    # Tab layout configuration
-│   │   └── index.tsx      # Home tab screen
-│   ├── _layout.tsx        # Root layout
-│   ├── modal.tsx          # Modal screen example
-│   └── +not-found.tsx     # 404 screen
-├── assets/                # Static assets
-│   └── images/           # App icons and images
-├── constants/            # App constants and configuration
-├── app.json             # Expo configuration
-├── package.json         # Dependencies and scripts
-└── tsconfig.json        # TypeScript configuration
-```
-
-## Custom Development Builds
-
-For advanced native features, you'll need to create a Custom Development Build instead of using Expo Go.
-
-### **When do you need a Custom Development Build?**
-
-- **Native Authentication**: Face ID, Touch ID, Apple Sign In, Google Sign In
-- **In-App Purchases**: App Store and Google Play subscriptions
-- **Advanced Native Features**: Third-party SDKs, platform-specifc features (e.g. Widgets on iOS)
-- **Background Processing**: Background tasks, location tracking
-
-### **Creating a Custom Development Build**
-
+**Prerequisites**
 ```bash
 # Install EAS CLI
-bun i -g @expo/eas-cli
+bun install -g @expo/eas-cli
 
-# Configure your project for development builds
-eas build:configure
-
-# Create a development build for your device
-eas build --profile development --platform ios
-eas build --profile development --platform android
-
-# Install the development build on your device and start developing
-bun start --dev-client
+# Login to Expo account
+eas login
 ```
 
-**Learn more:**
+**iOS App Store**
+```bash
+# Configure build
+eas build:configure
 
-- [Development Builds Introduction](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Creating Development Builds](https://docs.expo.dev/develop/development-builds/create-a-build/)
-- [Installing Development Builds](https://docs.expo.dev/develop/development-builds/installation/)
+# Create production build
+eas build --platform ios --profile production
 
-## Advanced Features
+# Submit to App Store
+eas submit --platform ios
+```
 
-### **Add a Database**
+**Google Play Store**
+```bash
+# Create Android build
+eas build --platform android --profile production
 
-Integrate with backend services:
+# Submit to Google Play
+eas submit --platform android
+```
 
-- **Supabase** - PostgreSQL database with real-time features
-- **Firebase** - Google's mobile development platform
-- **Custom API** - Connect to your own backend
+**Web Deployment**
+```bash
+# Build for web
+eas build --platform web
 
-### **Add Authentication**
+# Deploy with EAS Hosting
+eas hosting:configure
+eas hosting:deploy
 
-Implement user authentication:
+# Alternative: Deploy to Vercel/Netlify
+npx expo export:web
+```
 
-**Basic Authentication (works in Expo Go):**
+### ML API Deployment
 
-- **Expo AuthSession** - OAuth providers (Google, Facebook, Apple) - [Guide](https://docs.expo.dev/guides/authentication/)
-- **Supabase Auth** - Email/password and social login - [Integration Guide](https://supabase.com/docs/guides/getting-started/tutorials/with-expo-react-native)
-- **Firebase Auth** - Comprehensive authentication solution - [Setup Guide](https://docs.expo.dev/guides/using-firebase/)
+**Railway (Recommended)**
+```bash
+cd ml-api
+railway login
+railway init
+railway up
+```
 
-**Native Authentication (requires Custom Development Build):**
+**Docker Deployment**
+```bash
+# Build image
+docker build -t pacemind-ml-api ./ml-api
 
-- **Apple Sign In** - Native Apple authentication - [Implementation Guide](https://docs.expo.dev/versions/latest/sdk/apple-authentication/)
-- **Google Sign In** - Native Google authentication - [Setup Guide](https://docs.expo.dev/guides/google-authentication/)
+# Run container
+docker run -p 8000:8000 \
+  -e MODEL_PATH=/app/models/motivation_model.joblib \
+  pacemind-ml-api
+```
 
-### **Add Push Notifications**
+**Environment Variables for Production**
+```env
+# ML API
+MODEL_PATH=/app/models/motivation_model.joblib
+PORT=8000
+CORS_ORIGINS=https://your-app-domain.com
 
-Send notifications to your users:
+# App
+EXPO_PUBLIC_ML_API_URL=https://your-ml-api.railway.app
+EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-production-key
+```
 
-- **Expo Notifications** - Cross-platform push notifications
-- **Firebase Cloud Messaging** - Advanced notification features
+## 🔧 Troubleshooting
 
-### **Add Payments**
+### Common Issues
 
-Monetize your app:
+**App Won't Start**
+```bash
+# Clear cache and reinstall
+rm -rf node_modules
+bun install
+bunx expo start --clear
+```
 
-**Web & Credit Card Payments (works in Expo Go):**
+**GPS Tracking Issues**
+- Ensure location permissions are granted
+- Test in outdoor environment with clear sky view
+- Check device location services are enabled
+- Verify app has background location permission (iOS/Android)
 
-- **Stripe** - Credit card payments and subscriptions - [Expo + Stripe Guide](https://docs.expo.dev/guides/using-stripe/)
-- **PayPal** - PayPal payments integration - [Setup Guide](https://developer.paypal.com/docs/checkout/mobile/react-native/)
+**Database Connection Errors**
+```typescript
+// Check Supabase configuration
+import { supabase } from '@/lib/supabase';
 
-**Native In-App Purchases (requires Custom Development Build):**
+const testConnection = async () => {
+  const { data, error } = await supabase.auth.getSession();
+  console.log('Supabase connection:', { data, error });
+};
+```
 
-- **RevenueCat** - Cross-platform in-app purchases and subscriptions - [Expo Integration Guide](https://www.revenuecat.com/docs/expo)
-- **Expo In-App Purchases** - Direct App Store/Google Play integration - [Implementation Guide](https://docs.expo.dev/versions/latest/sdk/in-app-purchases/)
+**ML API Integration Issues**
+```bash
+# Test ML API connectivity
+curl -X GET https://your-ml-api.railway.app/health
 
-**Paywall Optimization:**
+# Check prediction endpoint
+curl -X POST https://your-ml-api.railway.app/predict \
+  -H "Content-Type: application/json" \
+  -d '{"walking":{"steps":5000},"context":{},"journal":{}}'
+```
 
-- **Superwall** - Paywall A/B testing and optimization - [React Native SDK](https://docs.superwall.com/docs/react-native)
-- **Adapty** - Mobile subscription analytics and paywalls - [Expo Integration](https://docs.adapty.io/docs/expo)
+**Build Failures**
+```bash
+# Clear Expo cache
+bunx expo start --clear
 
-## I want to use a custom domain - is that possible?
+# Reset Metro bundler
+bunx expo start --reset-cache
 
-For web deployments, you can use custom domains with:
+# Check for TypeScript errors
+bunx tsc --noEmit
+```
 
-- **EAS Hosting** - Custom domains available on paid plans
-- **Netlify** - Free custom domain support
-- **Vercel** - Custom domains with automatic SSL
+### Performance Issues
 
-For mobile apps, you'll configure your app's deep linking scheme in `app.json`.
+**Memory Leaks**
+- Monitor component unmounting and cleanup
+- Check for unsubscribed event listeners
+- Verify AsyncStorage cleanup in DataCleanupManager
 
-## Troubleshooting
+**Battery Optimization**
+- Adjust GPS update frequency in production
+- Implement intelligent background processing
+- Use device motion sensors as GPS fallback
 
-### **App not loading on device?**
+**Network Optimization**
+- Enable request batching in PerformanceOptimizer
+- Implement proper caching strategies
+- Use compression for large data transfers
 
-1. Make sure your phone and computer are on the same WiFi network
-2. Try using tunnel mode: `bun start -- --tunnel`
-3. Check if your firewall is blocking the connection
+### Debug Mode
 
-### **Build failing?**
+Enable comprehensive debugging:
+```env
+EXPO_PUBLIC_DEBUG_MODE=true
+EXPO_PUBLIC_PERFORMANCE_MONITORING=true
+```
 
-1. Clear your cache: `bunx expo start --clear`
-2. Delete `node_modules` and reinstall: `rm -rf node_modules && bun install`
-3. Check [Expo's troubleshooting guide](https://docs.expo.dev/troubleshooting/build-errors/)
+Access debug information:
+```typescript
+import { PerformanceMonitor } from '@/utils/performance';
 
-### **Need help with native features?**
+// View performance metrics
+const metrics = await PerformanceMonitor.getInstance().getPerformanceMetrics();
+console.log('Performance Debug:', metrics);
+```
 
-- Check [Expo's documentation](https://docs.expo.dev/) for native APIs
-- Browse [React Native's documentation](https://reactnative.dev/docs/getting-started) for core components
+## 🤝 Contributing
+
+### Development Workflow
+
+1. **Fork & Clone**
+   ```bash
+   git clone https://github.com/your-username/pacemind-app.git
+   cd pacemind-app
+   ```
+
+2. **Create Feature Branch**
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+
+3. **Development Setup**
+   ```bash
+   bun install
+   cp .env.example .env
+   # Configure environment variables
+   ```
+
+4. **Code Standards**
+   ```bash
+   # Lint code
+   bun run lint
+   bun run lint:fix
+   
+   # Run tests
+   bun run test
+   bun run test:coverage
+   ```
+
+5. **Commit & Push**
+   ```bash
+   git add .
+   git commit -m "feat: add new feature description"
+   git push origin feature/your-feature-name
+   ```
+
+### Code Style Guidelines
+
+**TypeScript Standards**
+- Use strict type checking
+- Prefer interfaces over types for object shapes
+- Implement proper error handling with try/catch
+- Use async/await over Promise chains
+
+**React Native Best Practices**
+- Implement proper component lifecycle management
+- Use React hooks appropriately
+- Optimize re-renders with useMemo/useCallback
+- Follow accessibility guidelines
+
+**Testing Requirements**
+- Write unit tests for all utility functions
+- Include integration tests for API interactions
+- Maintain minimum 70% code coverage
+- Test error scenarios and edge cases
+
+### Pull Request Process
+
+1. **Pre-submission Checklist**
+   - [ ] All tests pass (`bun run test`)
+   - [ ] Code coverage meets requirements
+   - [ ] Linting passes (`bun run lint`)
+   - [ ] TypeScript compilation succeeds
+   - [ ] Manual testing completed
+
+2. **PR Description Template**
+   ```markdown
+   ## Description
+   Brief description of changes
+   
+   ## Type of Change
+   - [ ] Bug fix
+   - [ ] New feature
+   - [ ] Breaking change
+   - [ ] Documentation update
+   
+   ## Testing
+   - [ ] Unit tests added/updated
+   - [ ] Integration tests pass
+   - [ ] Manual testing completed
+   
+   ## Screenshots (if applicable)
+   ```
+
+3. **Review Process**
+   - Code review by maintainers
+   - Automated testing via CI/CD
+   - Manual testing on multiple devices
+   - Documentation updates if needed
+
+### Issue Reporting
+
+**Bug Reports**
+```markdown
+## Bug Description
+Clear description of the issue
+
+## Steps to Reproduce
+1. Step one
+2. Step two
+3. Step three
+
+## Expected Behavior
+What should happen
+
+## Actual Behavior
+What actually happens
+
+## Environment
+- Device: iPhone 14 Pro / Pixel 7
+- OS Version: iOS 17.0 / Android 13
+- App Version: 1.1.0
+```
+
+**Feature Requests**
+```markdown
+## Feature Description
+Clear description of the proposed feature
+
+## Use Case
+Why is this feature needed?
+
+## Proposed Solution
+How should this feature work?
+
+## Alternatives Considered
+Other approaches considered
+```
+
+---
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- **Expo Team** for the excellent React Native framework
+- **Supabase** for backend-as-a-service platform
+- **scikit-learn** for machine learning capabilities
+- **React Native Community** for comprehensive ecosystem
+
+## 📞 Support
+
+- **Documentation**: [GitHub Wiki](https://github.com/your-username/pacemind-app/wiki)
+- **Issues**: [GitHub Issues](https://github.com/your-username/pacemind-app/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/your-username/pacemind-app/discussions)
+- **Email**: support@pacemind.app
+
+---
+
+**PaceMind v1.1.0** - Transforming walking into an intelligent, data-driven wellness journey.

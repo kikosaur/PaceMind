@@ -1,0 +1,24 @@
+{
+  "feature_columns": [
+    "steps",
+    "distance",
+    "duration",
+    "calories",
+    "pace",
+    "weeklyProgress",
+    "monthlyProgress",
+    "energyLevel",
+    "motivation",
+    "timeOfDay_afternoon",
+    "timeOfDay_evening",
+    "timeOfDay_morning",
+    "mood_happy",
+    "mood_neutral",
+    "mood_sad"
+  ],
+  "model_type": "RandomForestClassifier",
+  "training_date": "2025-10-04T10:01:59.744812",
+  "training_samples": 2000,
+  "test_accuracy": 0.9975,
+  "cv_mean_score": 0.9974999999999999
+}

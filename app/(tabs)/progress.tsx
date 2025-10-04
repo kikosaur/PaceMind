@@ -6,6 +6,8 @@ import {
   ScrollView,
   TextStyle,
   ViewStyle,
+  ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
 import { useWalking } from '@/contexts/WalkingContext';
 import { useWalkingSettings } from '@/contexts/SettingsContext';
@@ -19,7 +21,15 @@ type TimeRange = 'week' | 'month' | 'year';
 
 export default function ProgressScreen() {
   const [selectedRange, setSelectedRange] = useState<TimeRange>('week');
-  const { weeklyStats, monthlyStats, yearlyStats, motivationTrend } = useWalking();
+  const { 
+    weeklyStats, 
+    monthlyStats, 
+    yearlyStats, 
+    motivationTrend, 
+    motivationTrendLoading, 
+    motivationTrendError,
+    refreshMotivationTrend 
+  } = useWalking();
   const { dailyStepGoal } = useWalkingSettings();
   const insets = useSafeAreaInsets();
   const responsive = useResponsive();
@@ -47,7 +57,7 @@ export default function ProgressScreen() {
 
   const renderTimeRangeSelector = () => (
     <View style={styles.timeRangeContainer}>
-      {timeRanges.map((range) => (
+      {timeRanges.map((range: { key: TimeRange; label: string }) => (
         <Button
           key={range.key}
           variant={selectedRange === range.key ? 'primary' : 'outline'}
@@ -123,39 +133,95 @@ export default function ProgressScreen() {
 
   const renderMotivationTrend = () => (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Motivation Trend</Text>
+      <View style={styles.trendHeader}>
+        <Text style={styles.sectionTitle}>Motivation Trend</Text>
+        <TouchableOpacity 
+          onPress={refreshMotivationTrend}
+          style={styles.refreshButton}
+          disabled={motivationTrendLoading}
+        >
+          <Ionicons 
+            name="refresh" 
+            size={20} 
+            color={motivationTrendLoading ? Colors.textSecondary : Colors.primary} 
+          />
+        </TouchableOpacity>
+      </View>
+      
       <View style={styles.trendContainer}>
-        <View style={styles.trendChart}>
-          {motivationTrend.map((point, index) => (
-            <View key={`trend-${point.day}-${index}`} style={styles.trendPoint}>
-              <View 
-                style={[
-                  styles.trendBar,
-                  { 
-                    height: `${point.value}%`,
-                    backgroundColor: point.value >= 70 ? '#4CAF50' : 
-                                   point.value >= 40 ? '#66BB6A' : '#2E7D32'
-                  }
-                ]} 
-              />
-              <Text style={styles.trendLabel}>{point.day}</Text>
+        {motivationTrendLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={styles.loadingText}>Loading motivation trends...</Text>
+          </View>
+        ) : motivationTrendError ? (
+          <View style={styles.errorContainer}>
+            <Ionicons name="alert-circle" size={48} color={Colors.error} />
+            <Text style={styles.errorTitle}>Unable to Load Trends</Text>
+            <Text style={styles.errorText}>
+              {motivationTrendError.includes('offline') 
+                ? 'You appear to be offline. Showing cached data when available.'
+                : 'There was an issue loading your motivation trends. Please try again.'}
+            </Text>
+            <TouchableOpacity 
+              onPress={refreshMotivationTrend}
+              style={styles.retryButton}
+            >
+              <Text style={styles.retryButtonText}>Try Again</Text>
+            </TouchableOpacity>
+          </View>
+        ) : motivationTrend.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="bar-chart" size={48} color={Colors.textSecondary} />
+            <Text style={styles.emptyTitle}>No Trend Data</Text>
+            <Text style={styles.emptyText}>
+              Start logging your walks and journal entries to see your motivation trends.
+            </Text>
+          </View>
+        ) : (
+          <>
+            <View style={styles.trendChart}>
+              {motivationTrend.map((point: { day: string; value: number; prediction?: 'high' | 'low'; confidence?: number }, index: number) => (
+                <View key={`trend-${point.day}-${index}`} style={styles.trendPoint}>
+                  <View 
+                    style={[
+                      styles.trendBar,
+                      { 
+                        height: `${Math.max(point.value, 5)}%`,
+                        backgroundColor: point.value >= 70 ? '#4CAF50' : 
+                                       point.value >= 40 ? '#66BB6A' : '#2E7D32'
+                      }
+                    ]} 
+                  />
+                  <Text style={styles.trendLabel}>{point.day}</Text>
+                  <Text style={styles.trendValue}>{Math.round(point.value)}%</Text>
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
-        <View style={styles.trendLegend}>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: '#4CAF50' }]} />
-            <Text style={styles.legendText}>High (70%+)</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: '#66BB6A' }]} />
-            <Text style={styles.legendText}>Medium (40-69%)</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: '#2E7D32' }]} />
-            <Text style={styles.legendText}>Low (0-39%)</Text>
-          </View>
-        </View>
+            <View style={styles.trendLegend}>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendColor, { backgroundColor: '#4CAF50' }]} />
+                <Text style={styles.legendText}>High (70%+)</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendColor, { backgroundColor: '#66BB6A' }]} />
+                <Text style={styles.legendText}>Medium (40-69%)</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendColor, { backgroundColor: '#2E7D32' }]} />
+                <Text style={styles.legendText}>Low (0-39%)</Text>
+              </View>
+            </View>
+            <View style={styles.trendSummary}>
+              <Text style={styles.summaryText}>
+                Average: {Math.round(motivationTrend.reduce((sum, point) => sum + point.value, 0) / motivationTrend.length)}%
+              </Text>
+              <Text style={styles.summaryText}>
+                Trend: {motivationTrend.length > 1 && motivationTrend[motivationTrend.length - 1].value > motivationTrend[0].value ? '📈 Improving' : '📊 Stable'}
+              </Text>
+            </View>
+          </>
+        )}
       </View>
     </View>
   );
@@ -327,6 +393,75 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
   },
+  trendHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  refreshButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: Colors.backgroundSecondary,
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
+  },
+  errorContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  errorTitle: {
+    fontSize: Typography.fontSize.lg,
+    fontWeight: Typography.fontWeight.bold as TextStyle['fontWeight'],
+    color: Colors.error,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  errorText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  retryButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: BorderRadius.md,
+  },
+  retryButtonText: {
+    color: Colors.white,
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.medium as TextStyle['fontWeight'],
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  emptyTitle: {
+    fontSize: Typography.fontSize.lg,
+    fontWeight: Typography.fontWeight.bold as TextStyle['fontWeight'],
+    color: Colors.textSecondary,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  emptyText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
   trendChart: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -346,6 +481,25 @@ const styles = StyleSheet.create({
   trendLabel: {
     fontSize: 12,
     color: '#666',
+  },
+  trendValue: {
+    fontSize: 10,
+    color: Colors.textSecondary,
+    fontWeight: Typography.fontWeight.medium as TextStyle['fontWeight'],
+    marginTop: 2,
+  },
+  trendSummary: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
+  },
+  summaryText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textPrimary,
+    fontWeight: Typography.fontWeight.medium as TextStyle['fontWeight'],
   },
   trendLegend: {
     flexDirection: 'row',
