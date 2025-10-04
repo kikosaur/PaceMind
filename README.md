@@ -656,7 +656,7 @@ console.log('Performance Debug:', metrics);
 
 3. **Development Setup**
    ```bash
-   bun install
+   npm install
    cp .env.example .env
    # Configure environment variables
    ```
@@ -664,12 +664,12 @@ console.log('Performance Debug:', metrics);
 4. **Code Standards**
    ```bash
    # Lint code
-   bun run lint
-   bun run lint:fix
+   npm run lint
+   npm run lint:fix
    
    # Run tests
-   bun run test
-   bun run test:coverage
+   npm run test
+   npm run test:coverage
    ```
 
 5. **Commit & Push**
@@ -776,7 +776,7 @@ Other approaches considered
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+This project is for academic purpose only.
 
 ## 🙏 Acknowledgments
 
@@ -790,7 +790,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - **Documentation**: [GitHub Wiki](https://github.com/your-username/pacemind-app/wiki)
 - **Issues**: [GitHub Issues](https://github.com/your-username/pacemind-app/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/your-username/pacemind-app/discussions)
-- **Email**: support@pacemind.app
+- **Email**: kairuciriaca@gmail.com
 
 ---
 
