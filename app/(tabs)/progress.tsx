@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
+import { useAuth } from '@/contexts/AuthContext';
 import { useWalking } from '@/contexts/WalkingContext';
 import { useWalkingSettings } from '@/contexts/SettingsContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,23 +17,36 @@ import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius } from '../styles/designSystem';
 import { useResponsive } from '../hooks/useResponsive';
 import { StatCard, Button } from '../components';
+import { AIInsightsContentGenerator, AIInsightContent, InsightGenerationContext } from '../../services/ai-insights-content-generator';
+import { MotivationService } from '../../lib/motivation-service';
 
 type TimeRange = 'week' | 'month' | 'year';
 
 export default function ProgressScreen() {
   const [selectedRange, setSelectedRange] = useState<TimeRange>('week');
+  const [aiInsight, setAiInsight] = useState<AIInsightContent | null>(null);
+  const [isLoadingInsight, setIsLoadingInsight] = useState(false);
+  const { user } = useAuth();
   const { 
     weeklyStats, 
     monthlyStats, 
     yearlyStats, 
-    motivationTrend, 
-    motivationTrendLoading, 
+    lastCompletedWalk,
+    todayStats,
+    journalEntries,
+    motivationTrendData,
+    motivationTrend,
+    motivationTrendLoading,
     motivationTrendError,
-    refreshMotivationTrend 
+    refreshMotivationTrend
   } = useWalking();
   const { dailyStepGoal } = useWalkingSettings();
   const insets = useSafeAreaInsets();
   const responsive = useResponsive();
+
+  // Initialize AI insights generator and motivation service with useMemo
+  const insightsGenerator = useMemo(() => new AIInsightsContentGenerator(), []);
+  const motivationService = useMemo(() => new MotivationService(), []);
 
   const timeRanges = [
     { key: 'week' as TimeRange, label: 'Week' },
@@ -54,6 +68,94 @@ export default function ProgressScreen() {
   };
 
   const stats = getCurrentStats();
+
+  // Generate AI insights for progress screen
+  const generateProgressInsights = useCallback(async () => {
+    if (!todayStats) return;
+    
+    setIsLoadingInsight(true);
+    try {
+      const hour = new Date().getHours();
+      let timeOfDay: 'morning' | 'afternoon' | 'evening' = 'morning';
+      if (hour >= 12 && hour < 17) timeOfDay = 'afternoon';
+      else if (hour >= 17) timeOfDay = 'evening';
+
+      const dayOfWeek = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+      const isWeekend = dayOfWeek === 'Saturday' || dayOfWeek === 'Sunday';
+
+      // Get motivation data if available
+      let motivationData;
+      try {
+        if (lastCompletedWalk) {
+          // Convert CompletedWalk to database WalkingSession format for motivation service
+          const sessionForMotivation = {
+            id: 'temp-' + Date.now(),
+            user_id: user?.id || 'unknown',
+            created_at: new Date(lastCompletedWalk.startTime).toISOString(),
+            start_time: new Date(lastCompletedWalk.startTime).toISOString(),
+            end_time: new Date(lastCompletedWalk.endTime).toISOString(),
+            duration: lastCompletedWalk.durationSec,
+            steps: lastCompletedWalk.steps,
+            distance: lastCompletedWalk.distanceKm,
+            calories_burned: lastCompletedWalk.calories,
+            status: 'completed' as const
+          };
+          
+          motivationData = await motivationService.predictMotivation(
+            sessionForMotivation,
+            journalEntries || [],
+            todayStats
+          );
+        }
+      } catch (error) {
+        console.log('Could not fetch motivation data:', error);
+      }
+
+      const context: InsightGenerationContext = {
+        recentSessions: lastCompletedWalk ? [{
+          startTime: lastCompletedWalk.startTime,
+          duration: lastCompletedWalk.durationSec,
+          distance: lastCompletedWalk.distanceKm,
+          steps: lastCompletedWalk.steps,
+          calories: lastCompletedWalk.calories,
+          isPaused: false,
+          metrics: {
+            averagePace: lastCompletedWalk.durationSec / 60 / lastCompletedWalk.distanceKm,
+            speed: lastCompletedWalk.distanceKm * 1000 / lastCompletedWalk.durationSec
+          }
+        }] : [],
+        basicStats: todayStats,
+        motivationData,
+        motivationTrends: motivationTrendData || undefined,
+        journalEntries: journalEntries || [],
+        timeOfDay,
+        dayOfWeek,
+        isWeekend
+      };
+
+      const insight = await insightsGenerator.generateProgressInsights(context);
+      setAiInsight(insight);
+    } catch (error) {
+      console.error('Error generating progress insights:', error);
+      // Set fallback insight
+      setAiInsight({
+        id: 'fallback-progress',
+        title: 'Your Journey Continues',
+        content: 'Track your progress and celebrate every milestone on your path to better health.',
+        icon: 'trending-up',
+        priority: 'medium',
+        type: 'motivation',
+        timestamp: Date.now(),
+        confidence: 0.5
+      });
+    } finally {
+      setIsLoadingInsight(false);
+    }
+  }, [todayStats, lastCompletedWalk, journalEntries, motivationTrendData, insightsGenerator, motivationService, user]);
+
+  useEffect(() => {
+    generateProgressInsights();
+  }, [generateProgressInsights, selectedRange]); // Regenerate when time range changes
 
   const renderTimeRangeSelector = () => (
     <View style={styles.timeRangeContainer}>
@@ -214,7 +316,7 @@ export default function ProgressScreen() {
             </View>
             <View style={styles.trendSummary}>
               <Text style={styles.summaryText}>
-                Average: {Math.round(motivationTrend.reduce((sum, point) => sum + point.value, 0) / motivationTrend.length)}%
+                Average: {Math.round(motivationTrend.reduce((sum: number, point: { day: string; value: number; prediction?: 'high' | 'low'; confidence?: number }) => sum + point.value, 0) / motivationTrend.length)}%
               </Text>
               <Text style={styles.summaryText}>
                 Trend: {motivationTrend.length > 1 && motivationTrend[motivationTrend.length - 1].value > motivationTrend[0].value ? '📈 Improving' : '📊 Stable'}
@@ -269,12 +371,24 @@ export default function ProgressScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>AI Insights</Text>
           <View style={styles.insightCard}>
-            <Ionicons name="flash" color="#4CAF50" size={24} />
+            {isLoadingInsight ? (
+              <ActivityIndicator color={Colors.primary} size="small" />
+            ) : (
+              <Ionicons 
+                name={aiInsight?.icon as any || "flash"} 
+                color="#4CAF50" 
+                size={24} 
+              />
+            )}
             <View style={styles.insightContent}>
-              <Text style={styles.insightTitle}>Great Progress!</Text>
+              <Text style={styles.insightTitle}>
+                {isLoadingInsight ? 'Analyzing your progress...' : (aiInsight?.title || 'AI Insights')}
+              </Text>
               <Text style={styles.insightText as TextStyle}>
-                Your motivation has increased by 15% this week. You&apos;re most active on weekdays 
-                between 2-4 PM. Consider scheduling walks during this time for best results.
+                {isLoadingInsight 
+                  ? 'Generating personalized insights based on your walking patterns...'
+                  : (aiInsight?.content || 'Your personalized insights will appear here.')
+                }
               </Text>
             </View>
           </View>

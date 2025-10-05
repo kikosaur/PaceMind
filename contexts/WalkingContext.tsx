@@ -3,10 +3,8 @@ import React, { createContext, useContext, useReducer, useCallback, useEffect, u
 import { useAuth } from './AuthContext';
 import { startWalkingSync, updateWalkingSession, completeWalkingSession } from '../lib/realtime-sync';
 import { DataCleanupManager, CLEANUP_CONFIGS, createArrayCleanupCallback } from '../utils/dataCleanup';
-import { v4 as uuidv4 } from 'uuid';
 import { 
   getEnhancedWalkingManager, 
-  EnhancedWalkingSession, 
   EnhancedMetrics,
   EnhancedWalkingContextManager 
 } from '../lib/enhanced-walking-context';
@@ -84,7 +82,7 @@ export type WalkingState = {
   yearlyStats: BasicStats;
   weeklyGoal: number; // km
   motivationLevel: number; // 1-100
-  motivationTrend: Array<{ day: string; value: number }>;
+  motivationTrend: { day: string; value: number }[];
   
   // Journal
   journalEntries: JournalEntry[];
@@ -151,7 +149,7 @@ export type WalkingContextType = {
   yearlyStats: BasicStats;
   weeklyGoal: number;
   motivationLevel: number;
-  motivationTrend: Array<{ day: string; value: number }>;
+  motivationTrend: { day: string; value: number }[];
   
   // Journal
   journalEntries: JournalEntry[];
@@ -236,34 +234,6 @@ const calculatePace = (distance: number, duration: number): number => {
 const calculateSpeed = (distance: number, duration: number): number => {
   if (duration <= 0) return 0;
   return (distance * 1000) / duration; // m/s
-};
-
-// Enhanced pace calculation with smoothing
-const calculateSmoothedPace = (
-  currentPace: number,
-  recentPaces: number[],
-  distance: number,
-  duration: number
-): number => {
-  const newPace = calculatePace(distance, duration);
-  
-  if (newPace <= 0 || !isFinite(newPace)) {
-    return currentPace;
-  }
-  
-  // Add new pace to recent paces (keep last 5)
-  const updatedPaces = [...recentPaces, newPace].slice(-5);
-  
-  // Calculate weighted average (more recent paces have higher weight)
-  if (updatedPaces.length > 0) {
-    const weights = updatedPaces.map((_, index) => index + 1);
-    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
-    const weightedSum = updatedPaces.reduce((sum, pace, index) => sum + pace * weights[index], 0);
-    
-    return totalWeight > 0 ? weightedSum / totalWeight : currentPace;
-  }
-  
-  return currentPace;
 };
 
 // Initial state
@@ -638,7 +608,7 @@ export const WalkingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => {
       cleanupManager.current?.stopPeriodicCleanup();
     };
-  }, []);
+  }, [state.routePoints, state.journalEntries, state.splits]);
   
   // Debounced sync function
   const debouncedSync = useCallback((updates: Partial<WalkingSession>) => {
@@ -759,9 +729,6 @@ export const WalkingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       
       if (trendData.data && trendData.data.length > 0) {
-        const recentAvg = trendData.data.slice(0, 3).reduce((sum, s) => sum + (s.distance || 0), 0) / 3;
-        const olderAvg = trendData.data.slice(3, 6).reduce((sum, s) => sum + (s.distance || 0), 0) / 3;
-        
         // Create motivation trend data array
         const motivationTrendData = trendData.data.slice(0, 7).map((session, index) => ({
           day: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][index] || `Day ${index + 1}`,
@@ -830,7 +797,7 @@ export const WalkingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
 
     processEnhancedMetrics();
-  }, [state.currentSession, state.isEnhancedMode]);
+  }, [state.currentSession, state.isEnhancedMode, state.routePoints]);
 
   // Load stats on mount and user change
   useEffect(() => {
@@ -845,8 +812,6 @@ export const WalkingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const startWalk = useCallback(async () => {
     try {
-      const sessionId = uuidv4();
-      
       // Create initial session in database (don't include id, let database generate it)
       const initialSession = {
         user_id: user?.id || '',
@@ -1032,6 +997,75 @@ export const WalkingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [state.currentSession, stopWalk]);
 
+  // Motivation prediction methods
+  const predictMotivation = useCallback(async (forceRefresh: boolean = false) => {
+    if (!motivationServiceRef.current || !user?.id) return;
+    
+    // Check if we need to refresh
+    const now = Date.now();
+    const lastUpdate = state.lastPredictionUpdate;
+    const cacheExpired = !lastUpdate || (now - lastUpdate) > (30 * 60 * 1000); // 30 minutes
+    
+    if (!forceRefresh && !cacheExpired && state.motivationPrediction) {
+      return;
+    }
+    
+    dispatch({ type: 'SET_PREDICTION_LOADING', payload: { isLoading: true } });
+    dispatch({ type: 'SET_PREDICTION_ERROR', payload: { error: null } });
+    
+    try {
+      // Convert currentSession to database WalkingSession format if it exists
+      let dbWalkingSession: import('../lib/database-improved').WalkingSession | null = null;
+      if (state.currentSession && user?.id) {
+        dbWalkingSession = {
+          id: `temp-${Date.now()}`,
+          user_id: user.id,
+          created_at: new Date().toISOString(),
+          start_time: new Date(state.currentSession.startTime).toISOString(),
+          end_time: undefined,
+          duration: state.currentSession.duration,
+          steps: state.currentSession.steps,
+          distance: state.currentSession.distance,
+          average_pace: state.currentSession.metrics?.averagePace || 0,
+          calories_burned: state.currentSession.calories,
+          route_coordinates: undefined,
+          start_location: undefined,
+          end_location: undefined,
+          status: state.currentSession.isPaused ? 'paused' : 'active',
+          weather_condition: undefined,
+          temperature: undefined,
+          humidity: undefined,
+          pre_walk_mood: undefined,
+          post_walk_mood: undefined,
+          motivation_level: undefined,
+          predicted_motivation: undefined,
+          intervention_applied: undefined,
+          intervention_effective: undefined
+        };
+      }
+
+      const prediction = await motivationServiceRef.current.predictMotivation(
+        dbWalkingSession,
+        state.journalEntries,
+        {
+          todayStats: state.todayStats,
+          weeklyStats: state.weeklyStats,
+          monthlyStats: state.monthlyStats
+        },
+        user?.id
+      );
+      
+      dispatch({ type: 'SET_MOTIVATION_PREDICTION', payload: { prediction } });
+      dispatch({ type: 'UPDATE_PREDICTION_TIMESTAMP', payload: { timestamp: now } });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to predict motivation';
+      dispatch({ type: 'SET_PREDICTION_ERROR', payload: { error: errorMessage } });
+      console.error('Motivation prediction failed:', error);
+    } finally {
+      dispatch({ type: 'SET_PREDICTION_LOADING', payload: { isLoading: false } });
+    }
+  }, [state.currentSession, state.journalEntries, state.todayStats, state.weeklyStats, state.monthlyStats, state.lastPredictionUpdate, state.motivationPrediction, user?.id]);
+
   const addJournalEntry = useCallback(async (entry: JournalEntry) => {
     dispatch({ type: 'ADD_JOURNAL_ENTRY', payload: { entry } });
     
@@ -1058,46 +1092,7 @@ export const WalkingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } catch (error) {
       console.warn('Failed to save journal entry:', error);
     }
-  }, [user?.id]);
-
-  // Motivation prediction methods
-  const predictMotivation = useCallback(async (forceRefresh: boolean = false) => {
-    if (!motivationServiceRef.current || !user?.id) return;
-    
-    // Check if we need to refresh
-    const now = Date.now();
-    const lastUpdate = state.lastPredictionUpdate;
-    const cacheExpired = !lastUpdate || (now - lastUpdate) > (30 * 60 * 1000); // 30 minutes
-    
-    if (!forceRefresh && !cacheExpired && state.motivationPrediction) {
-      return;
-    }
-    
-    dispatch({ type: 'SET_PREDICTION_LOADING', payload: { isLoading: true } });
-    dispatch({ type: 'SET_PREDICTION_ERROR', payload: { error: null } });
-    
-    try {
-      const prediction = await motivationServiceRef.current.predictMotivation(
-        state.currentSession,
-        state.journalEntries,
-        {
-          todayStats: state.todayStats,
-          weeklyStats: state.weeklyStats,
-          monthlyStats: state.monthlyStats
-        },
-        user?.id
-      );
-      
-      dispatch({ type: 'SET_MOTIVATION_PREDICTION', payload: { prediction } });
-      dispatch({ type: 'UPDATE_PREDICTION_TIMESTAMP', payload: { timestamp: now } });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to predict motivation';
-      dispatch({ type: 'SET_PREDICTION_ERROR', payload: { error: errorMessage } });
-      console.error('Motivation prediction failed:', error);
-    } finally {
-      dispatch({ type: 'SET_PREDICTION_LOADING', payload: { isLoading: false } });
-    }
-  }, [state.currentSession, state.journalEntries, state.todayStats, state.weeklyStats, state.monthlyStats, state.lastPredictionUpdate, state.motivationPrediction, user?.id]);
+  }, [user?.id, predictMotivation]);
 
   const getMotivationInsights = useCallback((): string[] => {
     if (!state.motivationPrediction) return [];

@@ -1,0 +1,109 @@
+{
+  "timestamp": "2025-10-05T15:29:30.518Z",
+  "summary": {
+    "totalFiles": 7,
+    "filesExist": 7,
+    "missingFiles": 0,
+    "contentValidations": 5,
+    "passedValidations": 3,
+    "partialValidations": 2,
+    "failedValidations": 0
+  },
+  "fileValidation": {
+    "filesExist": 7,
+    "totalFiles": 7,
+    "missingFiles": [],
+    "validationResults": [
+      {
+        "file": "services/adaptive-goal-service.ts",
+        "status": "EXISTS",
+        "size": "18.01KB",
+        "lastModified": "2025-10-05"
+      },
+      {
+        "file": "lib/motivation-service.ts",
+        "status": "EXISTS",
+        "size": "14.59KB",
+        "lastModified": "2025-10-05"
+      },
+      {
+        "file": "services/ai-insights-analyzer.ts",
+        "status": "EXISTS",
+        "size": "19.33KB",
+        "lastModified": "2025-10-05"
+      },
+      {
+        "file": "services/behavior-pattern-validator.ts",
+        "status": "EXISTS",
+        "size": "29.25KB",
+        "lastModified": "2025-10-05"
+      },
+      {
+        "file": "services/system-integration-tester.ts",
+        "status": "EXISTS",
+        "size": "31KB",
+        "lastModified": "2025-10-05"
+      },
+      {
+        "file": "services/performance-optimizer.ts",
+        "status": "EXISTS",
+        "size": "22.61KB",
+        "lastModified": "2025-10-05"
+      },
+      {
+        "file": "components/insights-interface-streamliner.tsx",
+        "status": "EXISTS",
+        "size": "17.29KB",
+        "lastModified": "2025-10-05"
+      }
+    ]
+  },
+  "contentValidation": [
+    {
+      "file": "adaptive-goal-service.ts",
+      "checks": {
+        "hasMainClass": true,
+        "hasMotivationTrend": true,
+        "hasGoalAdjustment": true
+      },
+      "status": "PASS"
+    },
+    {
+      "file": "motivation-service.ts",
+      "checks": {
+        "hasMainClass": true,
+        "hasPrediction": true,
+        "hasDataTransform": true
+      },
+      "status": "PASS"
+    },
+    {
+      "file": "ai-insights-analyzer.ts",
+      "checks": {
+        "hasMainClass": true,
+        "hasValidation": true,
+        "hasAccuracyMetrics": true
+      },
+      "status": "PASS"
+    },
+    {
+      "file": "behavior-pattern-validator.ts",
+      "checks": {
+        "hasMainClass": true,
+        "hasPatternDetection": false,
+        "hasValidation": false
+      },
+      "status": "PARTIAL"
+    },
+    {
+      "file": "performance-optimizer.ts",
+      "checks": {
+        "hasMainClass": true,
+        "hasOptimization": false,
+        "hasCaching": true
+      },
+      "status": "PARTIAL"
+    }
+  ],
+  "overallStatus": "GOOD"
+}

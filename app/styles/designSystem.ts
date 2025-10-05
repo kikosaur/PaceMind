@@ -32,6 +32,13 @@ export const Colors = {
   error: '#F44336',
   info: '#2196F3',
   
+  // Password Strength Colors
+  red500: '#F44336',
+  orange500: '#FF9800',
+  yellow500: '#FFEB3B',
+  blue500: '#2196F3',
+  green500: '#4CAF50',
+  
   // Background Colors
   background: '#FFFFFF',
   backgroundSecondary: '#F8F9FA',

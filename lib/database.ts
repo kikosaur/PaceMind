@@ -12,11 +12,18 @@ export interface Profile {
   daily_step_goal: number;
   notification_enabled: boolean;
   biometric_enabled: boolean;
+  auto_tracking: boolean;
   total_walks: number;
   total_distance: number;
   total_steps: number;
   current_streak: number;
   longest_streak: number;
+  age?: number;
+  weight?: number;
+  height?: number;
+  fitness_level?: 'beginner' | 'intermediate' | 'advanced';
+  weight_unit?: 'kg' | 'lbs';
+  height_unit?: 'cm' | 'ft';
 }
 
 export interface WalkingSession {

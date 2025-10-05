@@ -1,7 +1,7 @@
 import { MotivationService } from '../lib/motivation-service';
 import { MotivationCacheManager } from '../utils/motivationCache';
 import { MotivationErrorHandler, MotivationErrorType } from '../utils/motivationErrorHandler';
-import { WalkingSession } from '../contexts/WalkingContext';
+import { WalkingSession } from '../lib/database-improved';
 
 // Mock dependencies
 jest.mock('../utils/motivationCache');
@@ -47,16 +47,29 @@ describe('Motivation Integration Tests', () => {
   describe('Prediction with Cache Integration', () => {
     it('should return cached prediction when available', async () => {
       const mockWalkingSession: WalkingSession = {
-        startTime: Date.now(),
-        duration: 1800, // 30 minutes
-        distance: 3.2, // km
+        id: 'test-session-1',
+        user_id: 'test-user-1',
+        created_at: new Date().toISOString(),
+        start_time: new Date().toISOString(),
+        end_time: new Date(Date.now() + 1800000).toISOString(), // 30 minutes later
+        duration: 1800, // 30 minutes in seconds
         steps: 5000,
-        calories: 250,
-        isPaused: false,
-        metrics: {
-          averagePace: 5.5, // min/km
-          speed: 1.8 // m/s
-        }
+        distance: 3.2, // km
+        average_pace: 5.5, // min/km
+        calories_burned: 250,
+        route_coordinates: undefined,
+        start_location: undefined,
+        end_location: undefined,
+        status: 'completed',
+        weather_condition: undefined,
+        temperature: undefined,
+        humidity: undefined,
+        pre_walk_mood: undefined,
+        post_walk_mood: undefined,
+        motivation_level: undefined,
+        predicted_motivation: undefined,
+        intervention_applied: undefined,
+        intervention_effective: undefined
       };
 
       const cachedPrediction = {
@@ -91,16 +104,29 @@ describe('Motivation Integration Tests', () => {
 
     it('should fetch new prediction when cache is empty', async () => {
       const mockWalkingSession: WalkingSession = {
-        startTime: Date.now(),
-        duration: 1200, // 20 minutes
-        distance: 2.1, // km
+        id: 'test-session-2',
+        user_id: 'test-user-2',
+        created_at: new Date().toISOString(),
+        start_time: new Date().toISOString(),
+        end_time: new Date(Date.now() + 1200000).toISOString(), // 20 minutes later
+        duration: 1200, // 20 minutes in seconds
         steps: 3000,
-        calories: 150,
-        isPaused: false,
-        metrics: {
-          averagePace: 6.0, // min/km
-          speed: 1.75 // m/s
-        }
+        distance: 2.1, // km
+        average_pace: 6.0, // min/km
+        calories_burned: 150,
+        route_coordinates: undefined,
+        start_location: undefined,
+        end_location: undefined,
+        status: 'completed',
+        weather_condition: undefined,
+        temperature: undefined,
+        humidity: undefined,
+        pre_walk_mood: undefined,
+        post_walk_mood: undefined,
+        motivation_level: undefined,
+        predicted_motivation: undefined,
+        intervention_applied: undefined,
+        intervention_effective: undefined
       };
 
       mockCacheManager.getCachedPrediction.mockResolvedValueOnce(null);
@@ -128,16 +154,29 @@ describe('Motivation Integration Tests', () => {
 
     it('should handle prediction errors gracefully', async () => {
       const mockWalkingSession: WalkingSession = {
-        startTime: Date.now(),
-        duration: 600, // 10 minutes
-        distance: 0.8, // km
+        id: 'test-session-3',
+        user_id: 'test-user-3',
+        created_at: new Date().toISOString(),
+        start_time: new Date().toISOString(),
+        end_time: new Date(Date.now() + 600000).toISOString(), // 10 minutes later
+        duration: 600, // 10 minutes in seconds
         steps: 1000,
-        calories: 50,
-        isPaused: false,
-        metrics: {
-          averagePace: 7.5, // min/km
-          speed: 1.33 // m/s
-        }
+        distance: 0.8, // km
+        average_pace: 7.5, // min/km
+        calories_burned: 50,
+        route_coordinates: undefined,
+        start_location: undefined,
+        end_location: undefined,
+        status: 'completed',
+        weather_condition: undefined,
+        temperature: undefined,
+        humidity: undefined,
+        pre_walk_mood: undefined,
+        post_walk_mood: undefined,
+        motivation_level: undefined,
+        predicted_motivation: undefined,
+        intervention_applied: undefined,
+        intervention_effective: undefined
       };
 
       mockCacheManager.getCachedPrediction.mockResolvedValueOnce(null);
@@ -173,19 +212,6 @@ describe('Motivation Integration Tests', () => {
 
   describe('Error Handling Integration', () => {
     it('should integrate with error classification', async () => {
-      const mockWalkingSession: WalkingSession = {
-        startTime: Date.now(),
-        duration: 2700, // 45 minutes
-        distance: 5.0, // km
-        steps: 7500,
-        calories: 350,
-        isPaused: false,
-        metrics: {
-          averagePace: 5.4, // min/km
-          speed: 1.85 // m/s
-        }
-      };
-
       const networkError = new Error('Network failed');
       mockErrorHandler.classifyError.mockReturnValueOnce({
         type: MotivationErrorType.NETWORK_ERROR,

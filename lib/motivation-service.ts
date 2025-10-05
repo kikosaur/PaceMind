@@ -1,10 +1,9 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { WalkingSession, JournalEntry } from '../contexts/WalkingContext';
+import { JournalEntry } from '../types/walking';
+import { WalkingSession } from '../lib/database-improved';
 import { MotivationCacheManager } from '../utils/motivationCache';
 import { 
   MotivationErrorHandler, 
-  MotivationErrorType, 
-  MotivationError 
+  MotivationErrorType
 } from '../utils/motivationErrorHandler';
 
 // Types for ML model integration
@@ -96,14 +95,14 @@ export class MotivationService {
    * Transform walking session data for ML model
    */
   private transformWalkingData(session: WalkingSession): MotivationPredictionRequest['walking'] {
-    const durationMinutes = session.duration / 60; // Convert seconds to minutes
+    const durationMinutes = (session.duration || 0) / 60; // Convert seconds to minutes, handle undefined
     const pace = session.steps > 0 && durationMinutes > 0 ? session.steps / durationMinutes : 0;
 
     return {
       steps: session.steps,
       distance: session.distance,
       duration: durationMinutes,
-      calories: session.calories,
+      calories: session.calories_burned || 0,
       pace: pace
     };
   }
@@ -246,7 +245,7 @@ export class MotivationService {
           pace: 0
         },
         context: this.transformContextData(
-          walkingData?.startTime || Date.now(),
+          walkingData ? new Date(walkingData.start_time).getTime() : Date.now(),
           contextData?.weeklyStats?.distance || 0,
           contextData?.monthlyStats?.distance || 0
         ),
@@ -313,7 +312,7 @@ export class MotivationService {
             pace: 0
           },
           context: this.transformContextData(
-            walkingData?.startTime || Date.now(),
+            walkingData ? new Date(walkingData.start_time).getTime() : Date.now(),
             contextData?.weeklyStats?.distance || 0,
             contextData?.monthlyStats?.distance || 0
           ),

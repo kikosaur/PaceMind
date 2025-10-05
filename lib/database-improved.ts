@@ -12,11 +12,18 @@ export interface Profile {
   daily_step_goal: number;
   notification_enabled: boolean;
   biometric_enabled: boolean;
+  auto_tracking: boolean;
   total_walks: number;
   total_distance: number;
   total_steps: number;
   current_streak: number;
   longest_streak: number;
+  age?: number;
+  weight?: number;
+  height?: number;
+  fitness_level?: 'beginner' | 'intermediate' | 'advanced';
+  weight_unit?: 'kg' | 'lbs';
+  height_unit?: 'cm' | 'ft';
 }
 
 export interface WalkingSession {
@@ -471,7 +478,106 @@ export class DatabaseService {
     }
   }
 
-  // Motivation journal operations (simplified for brevity - same pattern applies)
+  // Motivation journal operations (simplified for brevity - same pattern applies)}
+
+  // User Goals operations
+  static async getUserGoals(userId: string): Promise<DatabaseResult<UserGoal[]>> {
+    try {
+      if (!validateUserId(userId)) {
+        return { success: false, error: 'Invalid user ID provided' };
+      }
+
+      const client = ensureSupabaseClient();
+      const { data, error } = await client
+        .from('user_goals')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching user goals:', error);
+        return { 
+          success: false, 
+          error: 'Failed to fetch user goals', 
+          code: error.code 
+        };
+      }
+
+      return { success: true, data: data || [] };
+    } catch (error) {
+      console.error('Unexpected error in getUserGoals:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error occurred' 
+      };
+    }
+  }
+
+  static async updateUserGoal(goalId: string, updates: Partial<UserGoal>): Promise<DatabaseResult<null>> {
+    try {
+      if (!goalId || typeof goalId !== 'string') {
+        return { success: false, error: 'Invalid goal ID provided' };
+      }
+
+      const client = ensureSupabaseClient();
+      const { error } = await client
+        .from('user_goals')
+        .update(updates)
+        .eq('id', goalId);
+
+      if (error) {
+        console.error('Error updating user goal:', error);
+        return { 
+          success: false, 
+          error: 'Failed to update user goal', 
+          code: error.code 
+        };
+      }
+
+      return { success: true, data: null };
+    } catch (error) {
+      console.error('Unexpected error in updateUserGoal:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error occurred' 
+      };
+    }
+  }
+
+  // Motivation Journal operations
+  static async getMotivationJournalEntries(userId: string, limit = 30): Promise<DatabaseResult<MotivationJournal[]>> {
+    try {
+      if (!validateUserId(userId)) {
+        return { success: false, error: 'Invalid user ID provided' };
+      }
+
+      const client = ensureSupabaseClient();
+      const { data, error } = await client
+        .from('motivation_journal')
+        .select('*')
+        .eq('user_id', userId)
+        .order('date', { ascending: false })
+        .limit(limit);
+
+      if (error) {
+        console.error('Error fetching motivation journal entries:', error);
+        return { 
+          success: false, 
+          error: 'Failed to fetch motivation journal entries', 
+          code: error.code 
+        };
+      }
+
+      return { success: true, data: data || [] };
+    } catch (error) {
+      console.error('Unexpected error in getMotivationJournalEntries:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error occurred' 
+      };
+    }
+  }
+
   static async createJournalEntry(entry: Omit<MotivationJournal, 'id' | 'created_at'>): Promise<DatabaseResult<null>> {
     try {
       if (!validateUserId(entry.user_id)) {

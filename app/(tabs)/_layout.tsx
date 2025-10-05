@@ -58,6 +58,13 @@ export default function TabLayout() {
             tabBarIcon: ({ color, size }) => <Ionicons name="settings" color={color} size={size} />,
           }}
         />
+        <Tabs.Screen
+          name="test-notifications"
+          options={{
+            title: "Test",
+            tabBarIcon: ({ color, size }) => <Ionicons name="notifications" color={color} size={size} />,
+          }}
+        />
       </Tabs>
     </>
   );

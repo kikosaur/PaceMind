@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   ScrollView,
   ViewStyle,
   TextStyle,
+  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
@@ -15,13 +16,27 @@ import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius } from '../styles/designSystem';
 import { useResponsive } from '../hooks/useResponsive';
 import { StatCard, Button, Card } from '../components';
+import { AIInsightsContentGenerator, AIInsightContent, InsightGenerationContext } from '../../services/ai-insights-content-generator';
+import { MotivationService } from '../../lib/motivation-service';
 
 export default function HomeScreen() {
   const { user } = useAuth();
-  const { todayStats, motivationLevel } = useWalking();
+  const { 
+    todayStats, 
+    lastCompletedWalk, 
+    journalEntries,
+    motivationTrendData,
+    motivationLevel
+  } = useWalking();
   const [greeting, setGreeting] = useState('');
+  const [aiInsight, setAiInsight] = useState<AIInsightContent | null>(null);
+  const [isLoadingInsight, setIsLoadingInsight] = useState(false);
   const insets = useSafeAreaInsets();
   const responsive = useResponsive();
+
+  // Initialize AI insights generator and motivation service with useMemo
+  const insightsGenerator = useMemo(() => new AIInsightsContentGenerator(), []);
+  const motivationService = useMemo(() => new MotivationService(), []);
 
   useEffect(() => {
     const hour = new Date().getHours();
@@ -29,6 +44,94 @@ export default function HomeScreen() {
     else if (hour < 17) setGreeting('Good Afternoon');
     else setGreeting('Good Evening');
   }, []);
+
+  // Generate AI insights for home screen
+  const generateAIInsights = useCallback(async () => {
+    if (!todayStats) return;
+    
+    setIsLoadingInsight(true);
+    try {
+      const hour = new Date().getHours();
+      let timeOfDay: 'morning' | 'afternoon' | 'evening' = 'morning';
+      if (hour >= 12 && hour < 17) timeOfDay = 'afternoon';
+      else if (hour >= 17) timeOfDay = 'evening';
+
+      const dayOfWeek = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+      const isWeekend = dayOfWeek === 'Saturday' || dayOfWeek === 'Sunday';
+
+      // Get motivation data if available
+      let motivationData;
+      try {
+        if (lastCompletedWalk) {
+          // Convert CompletedWalk to database WalkingSession format for motivation service
+          const sessionForMotivation = {
+            id: 'temp-' + Date.now(),
+            user_id: user?.id || 'unknown',
+            created_at: new Date(lastCompletedWalk.startTime).toISOString(),
+            start_time: new Date(lastCompletedWalk.startTime).toISOString(),
+            end_time: new Date(lastCompletedWalk.endTime).toISOString(),
+            duration: lastCompletedWalk.durationSec,
+            steps: lastCompletedWalk.steps,
+            distance: lastCompletedWalk.distanceKm,
+            calories_burned: lastCompletedWalk.calories,
+            status: 'completed' as const
+          };
+          
+          motivationData = await motivationService.predictMotivation(
+            sessionForMotivation,
+            journalEntries || [],
+            todayStats
+          );
+        }
+      } catch (error) {
+        console.log('Could not fetch motivation data:', error);
+      }
+
+      const context: InsightGenerationContext = {
+        recentSessions: lastCompletedWalk ? [{
+          startTime: lastCompletedWalk.startTime,
+          duration: lastCompletedWalk.durationSec,
+          distance: lastCompletedWalk.distanceKm,
+          steps: lastCompletedWalk.steps,
+          calories: lastCompletedWalk.calories,
+          isPaused: false,
+          metrics: {
+            averagePace: lastCompletedWalk.durationSec / 60 / lastCompletedWalk.distanceKm,
+            speed: lastCompletedWalk.distanceKm * 1000 / lastCompletedWalk.durationSec
+          }
+        }] : [],
+        basicStats: todayStats,
+        motivationData,
+        motivationTrends: motivationTrendData || undefined,
+        journalEntries: journalEntries || [],
+        timeOfDay,
+        dayOfWeek,
+        isWeekend
+      };
+
+      const insight = await insightsGenerator.generateHomeInsights(context);
+      setAiInsight(insight);
+    } catch (error) {
+      console.error('Error generating AI insights:', error);
+      // Set fallback insight
+      setAiInsight({
+        id: 'fallback-home',
+        title: 'Welcome Back!',
+        content: 'Ready to take on today\'s walking challenge? Every step counts towards your health goals.',
+        icon: 'sunny',
+        priority: 'medium',
+        type: 'motivation',
+        timestamp: Date.now(),
+        confidence: 0.5
+      });
+    } finally {
+      setIsLoadingInsight(false);
+    }
+  }, [todayStats, lastCompletedWalk, journalEntries, motivationTrendData, insightsGenerator, motivationService, user]);
+
+  useEffect(() => {
+    generateAIInsights();
+  }, [generateAIInsights]);
 
   const safeMotivation = typeof motivationLevel === 'number' ? motivationLevel : 0;
   
@@ -119,12 +222,24 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>AI Insights</Text>
           <View style={styles.insightCard}>
-            <Ionicons name="flash" color="#4CAF50" size={24} />
+            {isLoadingInsight ? (
+              <ActivityIndicator color="#4CAF50" size="small" />
+            ) : (
+              <Ionicons 
+                name={aiInsight?.icon as any || "flash"} 
+                color="#4CAF50" 
+                size={24} 
+              />
+            )}
             <View style={styles.insightContent}>
-              <Text style={styles.insightTitle}>Great Progress!</Text>
+              <Text style={styles.insightTitle}>
+                {isLoadingInsight ? 'Generating insights...' : (aiInsight?.title || 'AI Insights')}
+              </Text>
               <Text style={styles.insightText as TextStyle}>
-                Your motivation has increased by 15% this week. You&apos;re most active on weekdays 
-                between 2-4 PM. Consider scheduling walks during this time for best results.
+                {isLoadingInsight 
+                  ? 'Analyzing your walking patterns and motivation trends...'
+                  : (aiInsight?.content || 'Your personalized insights will appear here.')
+                }
               </Text>
             </View>
           </View>

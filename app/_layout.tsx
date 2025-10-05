@@ -8,6 +8,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { WalkingProvider } from "@/contexts/WalkingContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
+import { NotificationProvider } from "@/contexts/NotificationContext";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -35,7 +36,9 @@ export default function RootLayout() {
             <AuthProvider>
               <SettingsProvider>
                 <WalkingProvider>
-                  <RootLayoutNav />
+                  <NotificationProvider>
+                    <RootLayoutNav />
+                  </NotificationProvider>
                 </WalkingProvider>
               </SettingsProvider>
             </AuthProvider>

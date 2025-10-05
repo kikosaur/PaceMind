@@ -81,15 +81,44 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
             preferredWalkDuration: profile.preferred_walk_duration,
             walkingRemindersEnabled: profile.notification_enabled,
             biometricAuthEnabled: profile.biometric_enabled,
+            autoTrackingEnabled: profile.auto_tracking,
           };
           
           // Merge with local storage settings for other preferences
           const localSettings = await loadLocalSettings();
           setSettings({ ...defaultSettings, ...localSettings, ...dbSettings });
         } else {
-          // Fallback to local storage
-          const localSettings = await loadLocalSettings();
-          setSettings({ ...defaultSettings, ...localSettings });
+          // Create a default profile for new users
+          console.log('No profile found, creating default profile for user:', user.id);
+          const defaultProfile = {
+            id: user.id,
+            email: user.email || '',
+            daily_step_goal: defaultSettings.dailyStepGoal,
+            preferred_walk_duration: defaultSettings.preferredWalkDuration,
+            notification_enabled: defaultSettings.walkingRemindersEnabled,
+            biometric_enabled: defaultSettings.biometricAuthEnabled,
+            auto_tracking: defaultSettings.autoTrackingEnabled,
+            total_walks: 0,
+            total_distance: 0,
+            total_steps: 0,
+            current_streak: 0,
+            longest_streak: 0,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+          
+          const profileCreated = await DatabaseService.createProfile(defaultProfile);
+          if (profileCreated) {
+            console.log('Default profile created successfully');
+            // Load settings with default values
+            const localSettings = await loadLocalSettings();
+            setSettings({ ...defaultSettings, ...localSettings });
+          } else {
+            console.error('Failed to create default profile, falling back to local storage');
+            // Fallback to local storage
+            const localSettings = await loadLocalSettings();
+            setSettings({ ...defaultSettings, ...localSettings });
+          }
         }
       } else {
         // Load from local storage for unauthenticated users
@@ -145,6 +174,7 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
         preferred_walk_duration: newSettings.preferredWalkDuration,
         notification_enabled: newSettings.walkingRemindersEnabled,
         biometric_enabled: newSettings.biometricAuthEnabled,
+        auto_tracking: newSettings.autoTrackingEnabled,
       };
 
       const result = await DatabaseService.updateProfile(user.id, profileUpdates);
